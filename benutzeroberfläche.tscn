@@ -1,0 +1,20 @@
+[gd_scene load_steps=3 format=3 uid="uid://bgmw7b1bh2kxg"]
+
+[ext_resource type="Script" uid="uid://265e75r0a4s1" path="res://benutzeroberfläche.gd" id="1_epa3y"]
+
+[sub_resource type="Theme" id="Theme_epa3y"]
+
+[node name="Benutzeroberfläche" type="Control"]
+modulate = Color(1, 0.45882353, 1, 1)
+self_modulate = Color(0.5006544, 0.9999997, 0.9153014, 1)
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme = SubResource("Theme_epa3y")
+script = ExtResource("1_epa3y")
+
+[node name="Plantmenu" type="PopupMenu" parent="."]

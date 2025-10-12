@@ -1,0 +1,169 @@
+[gd_scene load_steps=9 format=3 uid="uid://cod61uqixx6q3"]
+
+[ext_resource type="Script" uid="uid://duagubrvbcmxl" path="res://field_7.gd" id="1_f3sb7"]
+
+[sub_resource type="Environment" id="Environment_gv5m4"]
+background_mode = 2
+ambient_light_energy = 0.84
+
+[sub_resource type="CameraAttributesPractical" id="CameraAttributesPractical_f3sb7"]
+
+[sub_resource type="Compositor" id="Compositor_fj7yv"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_gv5m4"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_f3sb7"]
+albedo_color = Color(0, 0.9607843, 0, 1)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_aqk2v"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gv5m4"]
+albedo_color = Color(0.60557646, 0.28567606, 0.070376076, 1)
+
+[node name="World" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_gv5m4")
+camera_attributes = SubResource("CameraAttributesPractical_f3sb7")
+compositor = SubResource("Compositor_fj7yv")
+
+[node name="Field3" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0.1, -42)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field6" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -21, 0.1, -42)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field7" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -42, 0.1, -42)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+script = ExtResource("1_f3sb7")
+
+[node name="Field4" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 21, 0.1, -42)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field5" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 42, 0.1, -42)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field8" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0.1, -21)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field9" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -21, 0.1, -21)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field10" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -42, 0.1, -21)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field11" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 21, 0.1, -21)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field12" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 42, 0.1, -21)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field13" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0.1, 0)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field14" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -21, 0.1, 0)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field15" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -42, 0.1, 0)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field16" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 21, 0.1, 0)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field17" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 42, 0.1, 0)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field18" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0.1, 21)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field19" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -21, 0.1, 21)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field20" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -42, 0.1, 21)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field21" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 21, 0.1, 21)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field22" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 42, 0.1, 21)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field23" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0.1, 42)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field24" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -21, 0.1, 42)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field25" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -42, 0.1, 42)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field26" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 21, 0.1, 42)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Field27" type="MeshInstance3D" parent="WorldEnvironment"]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 42, 0.1, 42)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.17364822, 0.9848077, 0, -0.9848077, 0.17364822, 0, 70, 17.95)
+current = true
+fov = 76.347664
+near = 0.137
+far = 3999.25
+
+[node name="Platform" type="MeshInstance3D" parent="."]
+transform = Transform3D(55, 0, 0, 0, 55, 0, 0, 0, 55, 0, 0, 0)
+mesh = SubResource("PlaneMesh_aqk2v")
+surface_material_override/0 = SubResource("StandardMaterial3D_gv5m4")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, -0.14208794, 77.92176, -0.043052197)
