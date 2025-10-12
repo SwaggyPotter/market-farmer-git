@@ -12,13 +12,7 @@ func _ready():
 	menu.add_item("Abbrechen", 0)
 	menu.id_pressed.connect(_on_menu_id)
 	menu.position = Vector2(200, 200)
-	call_deferred("_open_initial_menu")
-	print("Menu popup scheduled at:", menu.position)
-	print("PlantMenu ready")
-
-func _open_initial_menu():
-	_popup_at_position(menu.position)
-	print("Menu forced visible:", menu.visible)
+	print("PlantMenu ready (wartet auf Feldklick)")
 
 func _popup_at_position(screen_pos: Vector2):
 	var popup_size: Vector2 = menu.size
@@ -30,7 +24,8 @@ func _popup_at_position(screen_pos: Vector2):
 	var height: int = int(ceil(popup_size.y))
 	if height < 1:
 		height = 1
-	var popup_rect := Rect2i(Vector2i(screen_pos), Vector2i(width, height))
+	var popup_pos := Vector2i(int(round(screen_pos.x)), int(round(screen_pos.y)))
+	var popup_rect := Rect2i(popup_pos, Vector2i(width, height))
 	menu.position = screen_pos
 	menu.popup(popup_rect)
 	print("Menu popup at:", popup_rect.position)
@@ -45,7 +40,9 @@ func open_for_tile(tile: Node, screen_pos: Vector2):
 func _on_menu_id(id: int):
 	if id == 0 or current_tile == null:
 		menu.hide()
+		current_tile = null
 		return
 	var crop_id := "wheat" if id == 1 else "potato"
 	current_tile.call_deferred("start_growth", crop_id, 10.0)  # 10s Timer
 	menu.hide()
+	current_tile = null
