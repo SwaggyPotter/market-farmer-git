@@ -11,10 +11,18 @@ func _ready():
 	menu.add_separator()
 	menu.add_item("Abbrechen", 0)
 	menu.id_pressed.connect(_on_menu_id)
-	menu.show()
 	menu.position = Vector2(200, 200)
-	print("Menu forced visible:", menu.visible)
+	call_deferred("_open_initial_menu")
+	print("Menu popup scheduled at:", menu.position)
 	print("PlantMenu ready")
+
+func _open_initial_menu():
+	var popup_size: Vector2 = menu.size
+	if popup_size == Vector2.ZERO:
+		popup_size = menu.get_combined_minimum_size()
+	var popup_rect := Rect2(menu.position, popup_size.ceil())
+	menu.popup(Rect2i(popup_rect))
+	print("Menu forced visible:", menu.visible)
 
 
 func open_for_tile(tile: Node, _screen_pos: Vector2):
