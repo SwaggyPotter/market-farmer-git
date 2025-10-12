@@ -17,20 +17,29 @@ func _ready():
 	print("PlantMenu ready")
 
 func _open_initial_menu():
+	_popup_at_position(menu.position)
+	print("Menu forced visible:", menu.visible)
+
+func _popup_at_position(screen_pos: Vector2):
 	var popup_size: Vector2 = menu.size
 	if popup_size == Vector2.ZERO:
 		popup_size = menu.get_combined_minimum_size()
-	var popup_rect := Rect2(menu.position, popup_size.ceil())
-	menu.popup(Rect2i(popup_rect))
-	print("Menu forced visible:", menu.visible)
+	var width: int = int(ceil(popup_size.x))
+	if width < 1:
+		width = 1
+	var height: int = int(ceil(popup_size.y))
+	if height < 1:
+		height = 1
+	var popup_rect := Rect2i(Vector2i(screen_pos), Vector2i(width, height))
+	menu.position = screen_pos
+	menu.popup(popup_rect)
+	print("Menu popup at:", popup_rect.position)
 
-
-func open_for_tile(tile: Node, _screen_pos: Vector2):
+func open_for_tile(tile: Node, screen_pos: Vector2):
 	current_tile = tile
 	menu.visible = true
-	menu.position = Vector2(200, 200)
-	menu.popup()
-	print("Menu opened manually at 200,200")
+	_popup_at_position(screen_pos)
+	print("Menu opened for tile:", tile.name)
 
 
 func _on_menu_id(id: int):

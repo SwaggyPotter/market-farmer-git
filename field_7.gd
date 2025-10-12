@@ -15,6 +15,7 @@ func _ready():
 func _on_input_event(_camera, event, _position, _normal, _shape_idx):
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		print("Klick auf: ", name)
+		get_tree().call_group("ui", "open_for_tile", self, event.position)
 		planted = !planted
 		_update_visual()
 
