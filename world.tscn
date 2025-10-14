@@ -1,7 +1,8 @@
-[gd_scene load_steps=9 format=3 uid="uid://cod61uqixx6q3"]
+[gd_scene load_steps=10 format=3 uid="uid://cod61uqixx6q3"]
 
 [ext_resource type="PackedScene" uid="uid://ccvxmyukm6qrp" path="res://Tile.tscn" id="1_f3sb7"]
 [ext_resource type="PackedScene" uid="uid://bgmw7b1bh2kxg" path="res://benutzeroberfläche.tscn" id="2_fj7yv"]
+[ext_resource type="PackedScene" uid="uid://bb8uta68hnvrg" path="res://assets/Feld.glb" id="2_tlwt5"]
 
 [sub_resource type="Environment" id="Environment_gv5m4"]
 background_mode = 2
@@ -101,11 +102,14 @@ transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 1.1159
 [node name="Field31" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
 transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 2.204584, 0.1, 2.5683746)
 
+[node name="Feld" parent="WorldEnvironment" instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -2.1484742, 0.095831305, -2.542006)
+
 [node name="Camera3D" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.4014844, 0.9158659, 0, -0.9158659, 0.4014844, 0.07871914, 2.9973457, 2.3628395)
+transform = Transform3D(1, 0, 0, 0, 0.5718883, 0.8203316, 0, -0.8203316, 0.5718883, 0.07871914, 3.857207, 3.480303)
 current = true
-fov = 81.22965
-near = 0.137
+fov = 73.125
+near = 0.11
 far = 3999.25
 
 [node name="Platform" type="MeshInstance3D" parent="."]
