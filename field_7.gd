@@ -5,6 +5,15 @@ const Y_OFFSET  := 0.01
 const COLOR_EMPTY := Color(0.754, 0.0, 0.254, 1.0)
 const COLOR_GROWING := Color(0.868, 0.867, 0.0, 1.0)
 const COLOR_READY := Color(0.223, 0.737, 0.047, 1.0)
+const CROP_SCENES := {
+	"wheat": preload("res://assets/WeizenBigger.glb"),
+}
+const CROP_SCALE := {
+	"wheat": Vector3(1.0, 1.0, 1.0),
+}
+const CROP_OFFSET := {
+	"wheat": Vector3(0, 0, 0),
+}
 
 enum FieldState { EMPTY, GROWING, READY }
 
@@ -14,6 +23,8 @@ var crop_type: String = ""
 @onready var mesh: MeshInstance3D = _ensure_mesh()
 @onready var body: StaticBody3D   = _ensure_body()
 @onready var growth_timer: Timer  = _ensure_timer()
+@onready var crop_container: Node3D = _ensure_crop_container()
+var crop_visual: Node3D = null
 
 func _ready():
 	body.input_event.connect(_on_input_event)
@@ -75,6 +86,28 @@ func _ensure_timer() -> Timer:
 		t.timeout.connect(callable)
 	return t
 
+func _ensure_crop_container() -> Node3D:
+	var container := get_node_or_null("CropContainer")
+	if container == null:
+		container = Node3D.new()
+		container.name = "CropContainer"
+		container.position = Vector3.ZERO
+		container.rotation = Vector3.ZERO
+		container.visible = false
+		var parent_scale := scale
+		var safe_scale := Vector3(
+			parent_scale.x if abs(parent_scale.x) > 0.0001 else 1.0,
+			parent_scale.y if abs(parent_scale.y) > 0.0001 else 1.0,
+			parent_scale.z if abs(parent_scale.z) > 0.0001 else 1.0
+		)
+		container.scale = Vector3(
+			1.0 / safe_scale.x,
+			1.0 / safe_scale.y,
+			1.0 / safe_scale.z
+		)
+		add_child(container)
+	return container
+
 func _update_visual():
 	# hier gibt es garantiert ein Mesh & Material
 	var mat = mesh.get_active_material(0)
@@ -88,10 +121,15 @@ func _update_visual():
 	match state:
 		FieldState.EMPTY:
 			mat.albedo_color = COLOR_EMPTY
+			_set_crop_visibility(false)
 		FieldState.GROWING:
 			mat.albedo_color = COLOR_GROWING
+			_set_crop_visibility(crop_visual != null)
+			_update_crop_growth_visual(false)
 		FieldState.READY:
 			mat.albedo_color = COLOR_READY
+			_set_crop_visibility(crop_visual != null)
+			_update_crop_growth_visual(true)
 
 func start_growth(crop_id: String, duration: float):
 	if state != FieldState.EMPTY:
@@ -102,6 +140,7 @@ func start_growth(crop_id: String, duration: float):
 	growth_timer.wait_time = duration
 	growth_timer.start()
 	print("Aussaat auf", name, ":", crop_type, "(", duration, "s )")
+	_spawn_crop_visual(crop_type)
 	_update_visual()
 
 func _on_growth_finished():
@@ -114,4 +153,46 @@ func _harvest():
 	growth_timer.stop()
 	crop_type = ""
 	state = FieldState.EMPTY
+	_clear_crop_visual()
 	_update_visual()
+
+func _spawn_crop_visual(crop_id: String):
+	_clear_crop_visual()
+	if not CROP_SCENES.has(crop_id):
+		return
+	var scene: PackedScene = CROP_SCENES[crop_id]
+	var instance := scene.instantiate()
+	if instance is Node3D:
+		crop_visual = instance
+		crop_container.add_child(crop_visual)
+	else:
+		var wrapper := Node3D.new()
+		wrapper.name = str(crop_id, "_Wrapper")
+		crop_container.add_child(wrapper)
+		wrapper.add_child(instance)
+		crop_visual = wrapper
+	if CROP_OFFSET.has(crop_id):
+		crop_visual.position = CROP_OFFSET[crop_id]
+	if CROP_SCALE.has(crop_id):
+		crop_visual.scale = CROP_SCALE[crop_id]
+
+func _clear_crop_visual():
+	if crop_visual and crop_visual.is_inside_tree():
+		crop_visual.queue_free()
+	crop_visual = null
+	_set_crop_visibility(false)
+
+func _set_crop_visibility(visible: bool):
+	if crop_container:
+		crop_container.visible = visible
+
+func _update_crop_growth_visual(is_ready: bool):
+	if crop_visual == null:
+		return
+	var scale: Vector3 = Vector3.ONE
+	if CROP_SCALE.has(crop_type):
+		scale = CROP_SCALE[crop_type]
+	if is_ready:
+		crop_visual.scale = scale
+	else:
+		crop_visual.scale = scale * 0.7

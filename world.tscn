@@ -27,89 +27,89 @@ camera_attributes = SubResource("CameraAttributesPractical_f3sb7")
 compositor = SubResource("Compositor_fj7yv")
 
 [node name="Field7" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -42, 0.1, -42)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, -2.1498415, 0.1, -2.556626)
 
 [node name="Field8" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -21, 0.1, -42)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, -1.0612353, 0.1, -2.556626)
 
 [node name="Field9" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0.1, -42)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 0.027371237, 0.1, -2.556626)
 
 [node name="Field10" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 21, 0.1, -42)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 1.1159774, 0.1, -2.556626)
 
 [node name="Field11" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 42, 0.1, -42)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 2.204584, 0.1, -2.556626)
 
 [node name="Field12" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -42, 0.1, -21)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, -2.1498415, 0.1, -1.2753762)
 
 [node name="Field13" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -21, 0.1, -21)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, -1.0612353, 0.1, -1.2753762)
 
 [node name="Field14" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0.1, -21)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 0.027371237, 0.1, -1.2753762)
 
 [node name="Field15" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 21, 0.1, -21)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 1.1159774, 0.1, -1.2753762)
 
 [node name="Field16" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 42, 0.1, -21)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 2.204584, 0.1, -1.2753762)
 
 [node name="Field17" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -42, 0.1, 0)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, -2.1498415, 0.1, 0.0058739856)
 
 [node name="Field18" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -21, 0.1, 0)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, -1.0612353, 0.1, 0.0058739856)
 
 [node name="Field19" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0.1, 0)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 0.027371237, 0.1, 0.0058739856)
 
 [node name="Field20" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 21, 0.1, 0)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 1.1159774, 0.1, 0.0058739856)
 
 [node name="Field21" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 42, 0.1, 0)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 2.204584, 0.1, 0.0058739856)
 
 [node name="Field22" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -42, 0.1, 21)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, -2.1498415, 0.1, 1.2871243)
 
 [node name="Field23" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -21, 0.1, 21)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, -1.0612353, 0.1, 1.2871243)
 
 [node name="Field24" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0.1, 21)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 0.027371237, 0.1, 1.2871243)
 
 [node name="Field25" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 21, 0.1, 21)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 1.1159774, 0.1, 1.2871243)
 
 [node name="Field26" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 42, 0.1, 21)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 2.204584, 0.1, 1.2871243)
 
 [node name="Field27" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -42, 0.1, 42)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, -2.1498415, 0.1, 2.5683746)
 
 [node name="Field28" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -21, 0.1, 42)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, -1.0612353, 0.1, 2.5683746)
 
 [node name="Field29" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0.1, 42)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 0.027371237, 0.1, 2.5683746)
 
 [node name="Field30" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 21, 0.1, 42)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 1.1159774, 0.1, 2.5683746)
 
 [node name="Field31" parent="WorldEnvironment" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 42, 0.1, 42)
+transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, 2.204584, 0.1, 2.5683746)
 
 [node name="Camera3D" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.17364822, 0.9848077, 0, -0.9848077, 0.17364822, 0, 70, 17.95)
+transform = Transform3D(1, 0, 0, 0, 0.4014844, 0.9158659, 0, -0.9158659, 0.4014844, 0.07871914, 2.9973457, 2.3628395)
 current = true
-fov = 76.347664
+fov = 81.22965
 near = 0.137
 far = 3999.25
 
 [node name="Platform" type="MeshInstance3D" parent="."]
-transform = Transform3D(55, 0, 0, 0, 55, 0, 0, 0, 55, 0, 0, 0)
+transform = Transform3D(78.33522, 0, 0, 0, 55, 0, 0, 0, 79.13714, 0.07871914, 0, 0.043357372)
 mesh = SubResource("PlaneMesh_aqk2v")
 surface_material_override/0 = SubResource("StandardMaterial3D_gv5m4")
 
