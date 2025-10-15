@@ -32,7 +32,7 @@ camera_attributes = SubResource("CameraAttributesPractical_f3sb7")
 compositor = SubResource("Compositor_fj7yv")
 
 [node name="Field1" parent="FieldContainer" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(0.518384, 0, 0, 0, 10.000008, 0, 0, 0, 0.6101191, -2.1498415, 0.1, -2.556626)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.1498415, 0, -2.556626)
 
 [node name="Feld" parent="WorldEnvironment" instance=ExtResource("2_tlwt5")]
 transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -2.1484742, 0.095831305, -2.542006)

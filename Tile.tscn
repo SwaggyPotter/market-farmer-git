@@ -1,23 +1,14 @@
-[gd_scene load_steps=5 format=3 uid="uid://ccvxmyukm6qrp"]
+[gd_scene load_steps=3 format=3 uid="uid://ccvxmyukm6qrp"]
 
 [ext_resource type="Script" uid="uid://duagubrvbcmxl" path="res://field_7.gd" id="1_j13wd"]
 
-[sub_resource type="PlaneMesh" id="PlaneMesh_gv5m4"]
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_j13wd"]
-albedo_color = Color(0.0022676405, 0.0006281972, 0.00011545606, 0)
-
 [sub_resource type="BoxShape3D" id="BoxShape3D_f3sb7"]
-size = Vector3(1.9015503, 0.09083557, 1.9039307)
+size = Vector3(1, 0.1, 1)
 
-[node name="Field7" type="MeshInstance3D"]
-transform = Transform3D(1.4108868, 0, 0, 0, 10, 0, 0, 0, 1.3778458, 0, 0, 0)
-mesh = SubResource("PlaneMesh_gv5m4")
-surface_material_override/0 = SubResource("StandardMaterial3D_j13wd")
+[node name="Field" type="Node3D"]
 script = ExtResource("1_j13wd")
 
 [node name="StaticBody3D" type="StaticBody3D" parent="."]
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="StaticBody3D"]
-transform = Transform3D(0.9186389, 0, 0, 0, 0.42282388, 0, 0, 0, 1.0584854, 0.0075988774, 0.0061892034, 0.00714111)
 shape = SubResource("BoxShape3D_f3sb7")

@@ -82,6 +82,8 @@ func buy_field() -> bool:
 		return false
 	var slot_index: int = get_field_count()
 	new_field.name = "Field%d" % (slot_index + 1)
+	new_field.rotation = Vector3.ZERO
+	new_field.scale = Vector3.ONE
 	new_field.position = _compute_slot_position(slot_index)
 	_field_container.add_child(new_field)
 	return true
