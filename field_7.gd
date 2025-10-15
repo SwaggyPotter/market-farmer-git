@@ -60,12 +60,16 @@ func _ensure_mesh() -> MeshInstance3D:
 		plane.size = Vector2(TILE_SIZE, TILE_SIZE)
 		m.mesh = plane
 		m.position = Vector3(0, Y_OFFSET, 0)
+		m.visible = false
+		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(m)
 
 		var mat := StandardMaterial3D.new()
 		mat.resource_local_to_scene = true   # jede Instanz hat ihr eigenes Material
 		mat.roughness = 0.7
 		m.material_override = mat
+	m.visible = false
+	m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return m
 
 func _ensure_body() -> StaticBody3D:

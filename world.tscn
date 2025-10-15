@@ -127,3 +127,75 @@ offset_right = 1.0
 [node name="PlantMenu" type="PopupMenu" parent="Benutzeroberfläche"]
 size = Vector2i(200, 100)
 theme_override_styles/panel = SubResource("StyleBoxFlat_fj7yv")
+
+[node name="Feld" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -1.0669783, 0.095831305, -2.542006)
+
+[node name="Feld2" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 0.021249294, 0.095831305, -2.542006)
+
+[node name="Feld3" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 1.1062973, 0.095831305, -2.542006)
+
+[node name="Feld4" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 2.2115188, 0.095831305, -2.542006)
+
+[node name="Feld5" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -2.1484742, 0.095831305, -1.260868)
+
+[node name="Feld6" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -1.0669783, 0.095831305, -1.260868)
+
+[node name="Feld7" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 0.021249294, 0.095831305, -1.260868)
+
+[node name="Feld8" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 1.1062973, 0.095831305, -1.260868)
+
+[node name="Feld9" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 2.2115188, 0.095831305, -1.260868)
+
+[node name="Feld10" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -2.1484742, 0.095831305, 0.028535366)
+
+[node name="Feld11" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -1.0669783, 0.095831305, 0.028535366)
+
+[node name="Feld12" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 0.021249294, 0.095831305, 0.028535366)
+
+[node name="Feld13" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 1.1062973, 0.095831305, 0.028535366)
+
+[node name="Feld14" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 2.2115188, 0.095831305, 0.028535366)
+
+[node name="Feld15" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -2.1484742, 0.095831305, 1.3082281)
+
+[node name="Feld16" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -1.0669783, 0.095831305, 1.3082281)
+
+[node name="Feld17" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 0.021249294, 0.095831305, 1.3082281)
+
+[node name="Feld18" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 1.1062973, 0.095831305, 1.3082281)
+
+[node name="Feld19" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 2.2115188, 0.095831305, 1.3082281)
+
+[node name="Feld20" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -2.1484742, 0.095831305, 2.608088)
+
+[node name="Feld21" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -1.0669783, 0.095831305, 2.608088)
+
+[node name="Feld22" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 0.021249294, 0.095831305, 2.608088)
+
+[node name="Feld23" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 1.1062973, 0.095831305, 2.608088)
+
+[node name="Feld24" parent="." instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, 2.2115188, 0.095831305, 2.608088)
