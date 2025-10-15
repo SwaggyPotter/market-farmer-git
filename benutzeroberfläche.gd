@@ -2,10 +2,17 @@ extends Control
 
 @onready var menu: PopupMenu = $PlantMenu
 @onready var money_label: Label = $WalletPanel/MoneyLabel
+@onready var buy_field_button: Button = $WalletPanel/BuyFieldButton
 var current_tile: Node = null
+var field_manager: Node = null
 
 func _ready():
 	add_to_group("ui")      # damit Tiles dich finden
+	field_manager = _find_field_manager()
+	if buy_field_button:
+		buy_field_button.pressed.connect(_on_buy_field_pressed)
+	if field_manager == null:
+		call_deferred("_refresh_field_manager")
 	GameState.money_changed.connect(_on_money_changed)
 	_on_money_changed(GameState.money)
 	menu.clear()
@@ -53,3 +60,42 @@ func _on_menu_id(id: int):
 func _on_money_changed(amount: int) -> void:
 	if money_label:
 		money_label.text = "Geld: %d" % amount
+	_update_buy_button()
+
+func _on_buy_field_pressed() -> void:
+	if field_manager == null:
+		field_manager = _find_field_manager()
+	if field_manager and field_manager.has_method("buy_field"):
+		var success: bool = field_manager.buy_field()
+		if not success:
+			print("Feldkauf fehlgeschlagen")
+	_update_buy_button()
+
+func _update_buy_button() -> void:
+	if buy_field_button == null:
+		return
+	if field_manager == null:
+		field_manager = _find_field_manager()
+	var cost: int = 10
+	if field_manager and field_manager.has_method("get_field_cost"):
+		cost = field_manager.get_field_cost()
+	buy_field_button.text = "Feld kaufen (%d)" % cost
+	if field_manager == null:
+		buy_field_button.disabled = true
+		return
+	var disabled: bool = true
+	if field_manager.has_method("can_buy_field"):
+		disabled = not field_manager.can_buy_field()
+	else:
+		disabled = GameState.money < cost
+	buy_field_button.disabled = disabled
+
+func _find_field_manager() -> Node:
+	var managers: Array[Node] = get_tree().get_nodes_in_group("field_manager")
+	if managers.is_empty():
+		return null
+	return managers[0]
+
+func _refresh_field_manager() -> void:
+	field_manager = _find_field_manager()
+	_update_buy_button()
