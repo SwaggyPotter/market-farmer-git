@@ -3,6 +3,11 @@ extends Control
 @onready var menu: PopupMenu = $PlantMenu
 @onready var money_label: Label = $WalletPanel/MoneyLabel
 @onready var buy_field_button: Button = $WalletPanel/BuyFieldButton
+@onready var storage_button: Button = $WalletPanel/StorageButton
+@onready var storage_popup: PopupPanel = $StoragePopup
+@onready var storage_item_list: ItemList = $StoragePopup/MarginContainer/VBoxContainer/ItemList
+@onready var storage_empty_label: Label = $StoragePopup/MarginContainer/VBoxContainer/EmptyLabel
+@onready var storage_close_button: Button = $StoragePopup/MarginContainer/VBoxContainer/CloseButton
 var current_tile: Node = null
 var field_manager: Node = null
 
@@ -11,10 +16,16 @@ func _ready():
 	field_manager = _find_field_manager()
 	if buy_field_button:
 		buy_field_button.pressed.connect(_on_buy_field_pressed)
+	if storage_button:
+		storage_button.pressed.connect(_on_storage_button_pressed)
+	if storage_close_button:
+		storage_close_button.pressed.connect(_on_storage_close_pressed)
 	if field_manager == null:
 		call_deferred("_refresh_field_manager")
 	GameState.money_changed.connect(_on_money_changed)
+	GameState.inventory_changed.connect(_on_inventory_changed)
 	_on_money_changed(GameState.money)
+	_on_inventory_changed(GameState.get_inventory())
 	menu.clear()
 	menu.add_item("Weizen", 1)
 	menu.add_item("Kartoffel", 2)
@@ -99,3 +110,29 @@ func _find_field_manager() -> Node:
 func _refresh_field_manager() -> void:
 	field_manager = _find_field_manager()
 	_update_buy_button()
+
+func _on_storage_button_pressed() -> void:
+	if storage_popup == null:
+		return
+	_on_inventory_changed(GameState.get_inventory())
+	storage_popup.popup_centered()
+
+func _on_storage_close_pressed() -> void:
+	if storage_popup:
+		storage_popup.hide()
+
+func _on_inventory_changed(items: Array) -> void:
+	_update_storage_view(items)
+
+func _update_storage_view(items: Array) -> void:
+	if storage_item_list == null or storage_empty_label == null:
+		return
+	storage_item_list.clear()
+	if items.is_empty():
+		storage_item_list.visible = false
+		storage_empty_label.visible = true
+	else:
+		for entry in items:
+			storage_item_list.add_item(str(entry))
+		storage_item_list.visible = true
+		storage_empty_label.visible = false

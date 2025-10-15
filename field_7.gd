@@ -185,6 +185,8 @@ func _on_growth_finished():
 func _harvest():
 	print("Geerntet auf", name, ":", crop_type)
 	var payout: int = int(HARVEST_PAYOUT.get(crop_type, 0))
+	if not crop_type.is_empty():
+		GameState.add_to_inventory(crop_type)
 	if payout > 0:
 		GameState.add_money(payout)
 	growth_timer.stop()
