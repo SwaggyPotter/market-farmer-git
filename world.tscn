@@ -1,9 +1,14 @@
-[gd_scene load_steps=11 format=3 uid="uid://cod61uqixx6q3"]
+[gd_scene load_steps=13 format=3 uid="uid://cod61uqixx6q3"]
 
 [ext_resource type="PackedScene" uid="uid://ccvxmyukm6qrp" path="res://Tile.tscn" id="1_f3sb7"]
 [ext_resource type="PackedScene" uid="uid://bgmw7b1bh2kxg" path="res://benutzeroberfläche.tscn" id="2_fj7yv"]
 [ext_resource type="PackedScene" uid="uid://bb8uta68hnvrg" path="res://assets/Feld.glb" id="2_tlwt5"]
-[ext_resource type="Script" path="res://world.gd" id="3_mom4b"]
+[ext_resource type="Script" uid="uid://dpy16xpk6pk25" path="res://world.gd" id="3_mom4b"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_gv5m4"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_j13wd"]
+albedo_color = Color(0.0022676405, 0.0006281972, 0.00011545606, 0)
 
 [sub_resource type="Environment" id="Environment_gv5m4"]
 background_mode = 2
@@ -26,16 +31,20 @@ script = ExtResource("3_mom4b")
 
 [node name="FieldContainer" type="Node3D" parent="."]
 
+[node name="Field1" parent="FieldContainer" instance=ExtResource("1_f3sb7")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.1498415, -0.0025024116, -2.556626)
+mesh = SubResource("PlaneMesh_gv5m4")
+surface_material_override/0 = SubResource("StandardMaterial3D_j13wd")
+
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_gv5m4")
 camera_attributes = SubResource("CameraAttributesPractical_f3sb7")
 compositor = SubResource("Compositor_fj7yv")
 
-[node name="Field1" parent="FieldContainer" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.1498415, 0, -2.556626)
+[node name="FieldModelContainer" type="Node3D" parent="WorldEnvironment"]
 
-[node name="Feld" parent="WorldEnvironment" instance=ExtResource("2_tlwt5")]
-transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -2.1484742, 0.095831305, -2.542006)
+[node name="FieldModel1" parent="WorldEnvironment/FieldModelContainer" instance=ExtResource("2_tlwt5")]
+transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -2.1484742, -0.002595842, -2.542006)
 
 [node name="Camera3D" type="Camera3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 0.5718883, 0.8203316, 0, -0.8203316, 0.5718883, 0.07871914, 3.857207, 3.480303)
