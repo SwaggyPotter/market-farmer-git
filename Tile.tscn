@@ -4,8 +4,8 @@
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_gv5m4"]
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_f3sb7"]
-albedo_color = Color(0, 0.9607843, 0, 1)
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_j13wd"]
+albedo_color = Color(0.0022676405, 0.0006281972, 0.00011545606, 0)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_f3sb7"]
 size = Vector3(1.9015503, 0.09083557, 1.9039307)
@@ -13,7 +13,7 @@ size = Vector3(1.9015503, 0.09083557, 1.9039307)
 [node name="Field7" type="MeshInstance3D"]
 transform = Transform3D(1.4108868, 0, 0, 0, 10, 0, 0, 0, 1.3778458, 0, 0, 0)
 mesh = SubResource("PlaneMesh_gv5m4")
-surface_material_override/0 = SubResource("StandardMaterial3D_f3sb7")
+surface_material_override/0 = SubResource("StandardMaterial3D_j13wd")
 script = ExtResource("1_j13wd")
 
 [node name="StaticBody3D" type="StaticBody3D" parent="."]

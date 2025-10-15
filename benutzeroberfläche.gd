@@ -1,10 +1,13 @@
 extends Control
 
 @onready var menu: PopupMenu = $PlantMenu
+@onready var money_label: Label = $WalletPanel/MoneyLabel
 var current_tile: Node = null
 
 func _ready():
 	add_to_group("ui")      # damit Tiles dich finden
+	GameState.money_changed.connect(_on_money_changed)
+	_on_money_changed(GameState.money)
 	menu.clear()
 	menu.add_item("Weizen", 1)
 	menu.add_item("Kartoffel", 2)
@@ -46,3 +49,7 @@ func _on_menu_id(id: int):
 	current_tile.call_deferred("start_growth", crop_id, 10.0)  # 10s Timer
 	menu.hide()
 	current_tile = null
+
+func _on_money_changed(amount: int) -> void:
+	if money_label:
+		money_label.text = "Geld: %d" % amount

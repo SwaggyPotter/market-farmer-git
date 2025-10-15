@@ -17,4 +17,25 @@ mouse_filter = 2
 theme = SubResource("Theme_epa3y")
 script = ExtResource("1_epa3y")
 
-[node name="Plantmenu" type="PopupMenu" parent="."]
+[node name="PlantMenu" type="PopupMenu" parent="."]
+
+[node name="WalletPanel" type="Panel" parent="."]
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 180.0
+offset_bottom = 76.0
+
+[node name="MoneyLabel" type="Label" parent="WalletPanel"]
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 152.0
+offset_bottom = 36.0
+size_flags_horizontal = 4
+size_flags_vertical = 4
+text = "Geld: 0"
+horizontal_alignment = 1
+vertical_alignment = 1
