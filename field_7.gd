@@ -22,10 +22,6 @@ const CROP_OFFSET := {
 	"wheat": Vector3(0, 0, 0),
 }
 
-const HARVEST_PAYOUT := {
-	"wheat": 15,
-}
-
 enum FieldState { EMPTY, GROWING, READY }
 
 var state: FieldState = FieldState.EMPTY
@@ -184,11 +180,8 @@ func _on_growth_finished():
 
 func _harvest():
 	print("Geerntet auf", name, ":", crop_type)
-	var payout: int = int(HARVEST_PAYOUT.get(crop_type, 0))
 	if not crop_type.is_empty():
-		GameState.add_to_inventory(crop_type)
-	if payout > 0:
-		GameState.add_money(payout)
+		GameState.add_to_inventory(crop_type, 1.0)
 	growth_timer.stop()
 	active_phases.clear()
 	phase_durations.clear()

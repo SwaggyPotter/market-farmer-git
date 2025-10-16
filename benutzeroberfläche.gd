@@ -5,7 +5,8 @@ extends Control
 @onready var buy_field_button: Button = $WalletPanel/BuyFieldButton
 @onready var storage_button: Button = $WalletPanel/StorageButton
 @onready var storage_popup: PopupPanel = $StoragePopup
-@onready var storage_item_list: ItemList = $StoragePopup/MarginContainer/VBoxContainer/ItemList
+@onready var storage_items_scroll: ScrollContainer = $StoragePopup/MarginContainer/VBoxContainer/ItemsScroll
+@onready var storage_items_container: VBoxContainer = $StoragePopup/MarginContainer/VBoxContainer/ItemsScroll/ItemsContainer
 @onready var storage_empty_label: Label = $StoragePopup/MarginContainer/VBoxContainer/EmptyLabel
 @onready var storage_close_button: Button = $StoragePopup/MarginContainer/VBoxContainer/CloseButton
 var current_tile: Node = null
@@ -115,24 +116,109 @@ func _on_storage_button_pressed() -> void:
 	if storage_popup == null:
 		return
 	_on_inventory_changed(GameState.get_inventory())
-	storage_popup.popup_centered()
+	storage_popup.popup_centered_ratio(0.9)
 
 func _on_storage_close_pressed() -> void:
 	if storage_popup:
 		storage_popup.hide()
 
-func _on_inventory_changed(items: Array) -> void:
-	_update_storage_view(items)
+func _on_inventory_changed(storage: Dictionary) -> void:
+	_update_storage_view(storage)
 
-func _update_storage_view(items: Array) -> void:
-	if storage_item_list == null or storage_empty_label == null:
+func _update_storage_view(storage: Dictionary) -> void:
+	if storage_items_container == null or storage_empty_label == null or storage_items_scroll == null:
 		return
-	storage_item_list.clear()
-	if items.is_empty():
-		storage_item_list.visible = false
+	_clear_storage_items()
+	if storage.is_empty():
+		storage_items_scroll.visible = false
 		storage_empty_label.visible = true
+		return
+	storage_empty_label.visible = false
+	storage_items_scroll.visible = true
+	var crop_ids := storage.keys()
+	crop_ids.sort()
+	for crop_id in crop_ids:
+		var amount: float = float(storage.get(crop_id, 0.0))
+		var row := _create_storage_row(crop_id, amount)
+		storage_items_container.add_child(row)
+
+func _format_tons(amount: float) -> String:
+	var rounded: float = round(amount * 100.0) / 100.0
+	if is_equal_approx(rounded, round(rounded)):
+		return str(int(round(rounded)))
+	return "%.2f" % rounded
+
+func _clear_storage_items() -> void:
+	for child in storage_items_container.get_children():
+		child.queue_free()
+
+func _create_storage_row(item_id: String, amount: float) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.name = "StorageRow_%s" % item_id
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 8)
+
+	var name_label := Label.new()
+	name_label.text = "%s (%s t verfügbar)" % [GameState.get_display_name(item_id), _format_tons(amount)]
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	row.add_child(name_label)
+
+	var plus_button := Button.new()
+	plus_button.text = "+"
+	plus_button.focus_mode = Control.FOCUS_NONE
+	row.add_child(plus_button)
+
+	var amount_input := LineEdit.new()
+	amount_input.text = "0"
+	amount_input.placeholder_text = "0"
+	amount_input.custom_minimum_size = Vector2(80, 0)
+	amount_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	row.add_child(amount_input)
+
+	var minus_button := Button.new()
+	minus_button.text = "-"
+	minus_button.focus_mode = Control.FOCUS_NONE
+	row.add_child(minus_button)
+
+	var sell_button := Button.new()
+	sell_button.text = "Verkaufen"
+	sell_button.focus_mode = Control.FOCUS_NONE
+	row.add_child(sell_button)
+
+	plus_button.pressed.connect(Callable(self, "_on_storage_adjust_pressed").bind(item_id, amount_input, 1.0))
+	minus_button.pressed.connect(Callable(self, "_on_storage_adjust_pressed").bind(item_id, amount_input, -1.0))
+	sell_button.pressed.connect(Callable(self, "_on_storage_sell_pressed").bind(item_id, amount_input))
+	amount_input.text_submitted.connect(Callable(self, "_on_storage_sell_pressed").bind(item_id, amount_input))
+
+	return row
+
+func _on_storage_adjust_pressed(item_id: String, input: LineEdit, delta: float) -> void:
+	var current: float = _parse_tons(input.text)
+	var available: float = GameState.get_storage_amount(item_id)
+	var target: float = current + delta
+	if delta > 0.0:
+		target = min(target, available)
 	else:
-		for entry in items:
-			storage_item_list.add_item(str(entry))
-		storage_item_list.visible = true
-		storage_empty_label.visible = false
+		target = max(target, 0.0)
+	target = clampf(target, 0.0, available)
+	input.text = _format_tons(target)
+
+func _on_storage_sell_pressed(item_id: String, input: LineEdit) -> void:
+	var requested: float = _parse_tons(input.text)
+	var available: float = GameState.get_storage_amount(item_id)
+	var amount_to_sell: float = clampf(requested, 0.0, available)
+	if amount_to_sell <= 0.0:
+		input.text = "0"
+		return
+	if GameState.sell_from_inventory(item_id, amount_to_sell):
+		input.text = "0"
+	else:
+		input.text = _format_tons(amount_to_sell)
+
+func _parse_tons(raw_value: String) -> float:
+	var value := raw_value.strip_edges()
+	if value.is_empty():
+		return 0.0
+	value = value.replace(",", ".")
+	return value.to_float()
