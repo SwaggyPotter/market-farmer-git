@@ -8,6 +8,7 @@ const COLOR_READY := Color(0.223, 0.737, 0.047, 1.0)
 const CROP_SCENES := {
 	"wheat": preload("res://assets/WeizenBigger.glb"),
 }
+const DEFAULT_CROP_ID := "wheat"  # fallback visuals for crops without dedicated assets
 const CROP_PHASES := {
 	"wheat": [
 		{"scene": preload("res://assets/SetzlingAnfang.glb"), "fraction": 0.3, "scale": Vector3(0.175, 0.175, 0.175)},
@@ -35,6 +36,8 @@ var crop_visual: Node3D = null
 var active_phases: Array = []
 var phase_durations: Array[float] = []
 var phase_index: int = -1
+var fertilizer_yield_progress: float = 0.0
+var fertilizer_applications: Dictionary = {}
 
 func _ready():
 	body.input_event.connect(_on_input_event)
@@ -43,13 +46,57 @@ func _ready():
 func _on_input_event(_camera, event, _position, _normal, _shape_idx):
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		match state:
-			FieldState.READY:
-				_harvest()
-			FieldState.GROWING:
-				print("Feld", name, "wächst noch:", crop_type, "(Rest:", "%.2f" % growth_timer.time_left, "s)")
-			_:
+			FieldState.EMPTY:
 				print("Klick auf freies Feld:", name)
 				get_tree().call_group("ui", "open_for_tile", self, event.position)
+			FieldState.GROWING:
+				print("Feld", name, "wächst noch:", crop_type, "(Rest:", "%.2f" % growth_timer.time_left, "s)")
+				get_tree().call_group("ui", "open_for_tile", self, event.position)
+			FieldState.READY:
+				_harvest()
+			_:
+				print("Unbekannter Feldstatus bei Klick:", state)
+
+func get_field_state() -> int:
+	return state
+
+func can_apply_fertilizer(_fertilizer_id: String = "") -> bool:
+	return state == FieldState.GROWING
+
+func apply_fertilizer(fertilizer_id: String) -> bool:
+	if not can_apply_fertilizer(fertilizer_id):
+		print("Duenger kann aktuell nicht angewendet werden auf", name)
+		return false
+	if fertilizer_id.is_empty():
+		return false
+	var effects := GameState.get_fertilizer_effects(fertilizer_id)
+	if effects.is_empty():
+		print("Keine Effekte fuer", fertilizer_id, "definiert.")
+		return false
+	var recognized := false
+	for effect_dict in effects:
+		var effect_type := String(effect_dict.get("type", ""))
+		match effect_type:
+			"yield_bonus":
+				var value := float(effect_dict.get("value", 0.0))
+				if value <= 0.0:
+					continue
+				fertilizer_yield_progress += value
+				recognized = true
+			_:
+				print("Unbekannter Duengereffekt:", effect_type)
+	if not recognized:
+		print("Keine anwendbaren Effekte fuer Duenger:", fertilizer_id)
+		return false
+	var applied_count := int(fertilizer_applications.get(fertilizer_id, 0))
+	fertilizer_applications[fertilizer_id] = applied_count + 1
+	print("Duenger angewendet auf %s: %s (Anwendungen: %d, Bonus-Fortschritt: %.2f)" % [
+		name,
+		GameState.get_display_name(fertilizer_id),
+		fertilizer_applications[fertilizer_id],
+		fertilizer_yield_progress,
+	])
+	return true
 
 func _ensure_mesh() -> MeshInstance3D:
 	var m = get_node_or_null("MeshInstance3D")
@@ -149,15 +196,22 @@ func start_growth(crop_id: String, duration: float):
 		return
 	crop_type = crop_id
 	state = FieldState.GROWING
+	var base_config_duration := max(GameState.get_crop_base_growth_time(crop_type), 0.1)
+	var base_duration := duration if duration > 0.0 else base_config_duration
+	var research_duration := GameState.get_crop_growth_duration(crop_type)
+	var ratio := 1.0
+	if base_config_duration > 0.0:
+		ratio = research_duration / base_config_duration
+	var final_duration := max(base_duration * ratio, 0.1)
 	active_phases = _get_crop_phases(crop_type)
-	phase_durations = _compute_phase_durations(duration, active_phases)
+	phase_durations = _compute_phase_durations(final_duration, active_phases)
 	phase_index = -1
-	print("Aussaat auf", name, ":", crop_type, "(", duration, "s )")
+	print("Aussaat auf", name, ":", crop_type, "(%.2f s)" % final_duration)
 	if active_phases.is_empty():
 		var fallback_scene := _get_default_scene(crop_type)
 		_spawn_crop_visual(fallback_scene, _get_crop_scale(crop_type), _get_crop_offset(crop_type))
-		if duration > 0.0:
-			growth_timer.wait_time = duration
+		if final_duration > 0.0:
+			growth_timer.wait_time = final_duration
 			growth_timer.start()
 		else:
 			_on_growth_finished()
@@ -179,9 +233,21 @@ func _on_growth_finished():
 	_update_visual()
 
 func _harvest():
-	print("Geerntet auf", name, ":", crop_type)
+	var base_amount := 0.0
 	if not crop_type.is_empty():
-		GameState.add_to_inventory(crop_type, 1.0)
+		base_amount = GameState.get_crop_yield_amount(crop_type)
+	var bonus_units := 0.0
+	if fertilizer_yield_progress > 0.0:
+		bonus_units = floor(fertilizer_yield_progress)
+		if bonus_units > 0.0:
+			fertilizer_yield_progress = max(fertilizer_yield_progress - bonus_units, 0.0)
+	var total_amount := base_amount + bonus_units
+	if total_amount > 0.0 and not crop_type.is_empty():
+		GameState.add_to_inventory(crop_type, total_amount)
+	var formatted := "%.2f" % total_amount if total_amount > 0.0 else "0"
+	if bonus_units > 0.0:
+		print("Bonus durch Duenger auf", name, ":+%.0f (Restbonus: %.2f)" % [bonus_units, fertilizer_yield_progress])
+	print("Geerntet auf", name, ":", crop_type, "(%s)" % formatted)
 	growth_timer.stop()
 	active_phases.clear()
 	phase_durations.clear()
@@ -220,19 +286,23 @@ func _set_crop_visibility(visible: bool):
 		crop_container.visible = visible
 
 func _get_default_scene(crop_id: String) -> PackedScene:
-	if CROP_SCENES.has(crop_id):
-		return CROP_SCENES[crop_id]
+	var resolved_id := crop_id if CROP_SCENES.has(crop_id) else DEFAULT_CROP_ID
+	if CROP_SCENES.has(resolved_id):
+		return CROP_SCENES[resolved_id]
 	return null
 
 func _get_crop_scale(crop_id: String) -> Vector3:
-	return CROP_SCALE.get(crop_id, Vector3.ONE)
+	var resolved_id := crop_id if CROP_SCALE.has(crop_id) else DEFAULT_CROP_ID
+	return CROP_SCALE.get(resolved_id, Vector3.ONE)
 
 func _get_crop_offset(crop_id: String) -> Vector3:
-	return CROP_OFFSET.get(crop_id, Vector3.ZERO)
+	var resolved_id := crop_id if CROP_OFFSET.has(crop_id) else DEFAULT_CROP_ID
+	return CROP_OFFSET.get(resolved_id, Vector3.ZERO)
 
 func _get_crop_phases(crop_id: String) -> Array:
-	if CROP_PHASES.has(crop_id):
-		return CROP_PHASES[crop_id].duplicate(true)
+	var resolved_id := crop_id if CROP_PHASES.has(crop_id) else DEFAULT_CROP_ID
+	if CROP_PHASES.has(resolved_id):
+		return CROP_PHASES[resolved_id].duplicate(true)
 	return []
 
 func _compute_phase_durations(total_duration: float, phases: Array) -> Array[float]:

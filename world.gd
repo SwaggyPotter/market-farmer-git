@@ -31,6 +31,7 @@ func _ready() -> void:
 	_align_existing_fields()
 	_update_model_reference()
 	_align_existing_models()
+	GameState.update_field_count(get_field_count())
 
 func _align_existing_fields() -> void:
 	if _field_container == null:
@@ -172,4 +173,5 @@ func buy_field() -> bool:
 	if _field_model_container:
 		_update_model_reference()
 		_align_existing_models()
+	GameState.update_field_count(get_field_count())
 	return true

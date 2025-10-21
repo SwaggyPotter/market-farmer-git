@@ -25,7 +25,7 @@ anchor_bottom = 0.0
 offset_left = 16.0
 offset_top = 16.0
 offset_right = 180.0
-offset_bottom = 212.0
+offset_bottom = 260.0
 
 [node name="MoneyLabel" type="Label" parent="WalletPanel"]
 anchor_right = 0.0
@@ -40,13 +40,26 @@ text = "Geld: 0"
 horizontal_alignment = 1
 vertical_alignment = 1
 
+[node name="RentLabel" type="Label" parent="WalletPanel"]
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 12.0
+offset_top = 48.0
+offset_right = 152.0
+offset_bottom = 80.0
+size_flags_horizontal = 4
+size_flags_vertical = 4
+text = "Mietkosten: 0 G/Stunde"
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="BuyFieldButton" type="Button" parent="WalletPanel"]
 anchor_right = 0.0
 anchor_bottom = 0.0
 offset_left = 12.0
-offset_top = 56.0
+offset_top = 84.0
 offset_right = 152.0
-offset_bottom = 92.0
+offset_bottom = 120.0
 size_flags_horizontal = 4
 text = "Feld kaufen (10)"
 
@@ -54,19 +67,29 @@ text = "Feld kaufen (10)"
 anchor_right = 0.0
 anchor_bottom = 0.0
 offset_left = 12.0
-offset_top = 100.0
+offset_top = 128.0
 offset_right = 152.0
-offset_bottom = 136.0
+offset_bottom = 164.0
 size_flags_horizontal = 4
 text = "Lager oeffnen"
+
+[node name="ResearchButton" type="Button" parent="WalletPanel"]
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 12.0
+offset_top = 172.0
+offset_right = 152.0
+offset_bottom = 208.0
+size_flags_horizontal = 4
+text = "Forschung"
 
 [node name="MarketButton" type="Button" parent="WalletPanel"]
 anchor_right = 0.0
 anchor_bottom = 0.0
 offset_left = 12.0
-offset_top = 144.0
+offset_top = 216.0
 offset_right = 152.0
-offset_bottom = 180.0
+offset_bottom = 252.0
 size_flags_horizontal = 4
 text = "Markt oeffnen"
 
@@ -193,6 +216,51 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
 [node name="MarketCloseButton" type="Button" parent="MarketPopup/MarketMargin/MarketVBox"]
+text = "Schliessen"
+text_alignment = 1
+size_flags_horizontal = 4
+
+[node name="ResearchPopup" type="PopupPanel" parent="."]
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 0.0
+custom_minimum_size = Vector2(960, 640)
+
+[node name="MarginContainer" type="MarginContainer" parent="ResearchPopup"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = -16.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="ResearchPopup/MarginContainer"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="ResearchPopup/MarginContainer/VBoxContainer"]
+text = "Forschung"
+horizontal_alignment = 1
+
+[node name="EmptyLabel" type="Label" parent="ResearchPopup/MarginContainer/VBoxContainer"]
+text = "Noch keine Forschung verfuegbar."
+horizontal_alignment = 1
+
+[node name="EntriesScroll" type="ScrollContainer" parent="ResearchPopup/MarginContainer/VBoxContainer"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="EntriesContainer" type="VBoxContainer" parent="ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="CloseButton" type="Button" parent="ResearchPopup/MarginContainer/VBoxContainer"]
 text = "Schliessen"
 text_alignment = 1
 size_flags_horizontal = 4

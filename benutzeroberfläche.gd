@@ -1,21 +1,30 @@
 extends Control
 
-const MENU_LABELS := {
-	0: "Abbrechen",
-	1: "Weizen",
-	2: "Kartoffel",
-}
-const MENU_ID_TO_CROP := {
-	1: "wheat",
-	2: "potato",
-}
+const MENU_CANCEL_ID := 0
+const MENU_ACTION_PLANT := "plant"
+const MENU_ACTION_FERTILIZE := "fertilize"
+const FIELD_STATE_UNKNOWN := -1
+const FIELD_STATE_EMPTY := 0
+const FIELD_STATE_GROWING := 1
+const FIELD_STATE_READY := 2
+const CROP_MENU_ORDER := [
+	"wheat",
+	"potato",
+]
+const DEFAULT_GROWTH_SECONDS := 10.0
 const CROP_TO_SEED := {
 	"wheat": "wheat_seed",
 	"potato": "potato_seed",
 }
+const STORAGE_CATEGORY_ORDER := [
+	GameState.ITEM_CATEGORY_FERTILIZER,
+	GameState.ITEM_CATEGORY_SEEDS,
+	GameState.ITEM_CATEGORY_HARVESTED,
+]
 
 @onready var menu: PopupMenu = $PlantMenu
 @onready var money_label: Label = $WalletPanel/MoneyLabel
+@onready var rent_label: Label = $WalletPanel/RentLabel
 @onready var buy_field_button: Button = $WalletPanel/BuyFieldButton
 @onready var storage_button: Button = $WalletPanel/StorageButton
 @onready var market_button: Button = $WalletPanel/MarketButton
@@ -30,10 +39,23 @@ const CROP_TO_SEED := {
 @onready var market_seeds_container: VBoxContainer = $MarketPopup/MarketMargin/MarketVBox/MarketSections/SeedsSection/SeedsContainer
 @onready var market_fertilizer_container: VBoxContainer = $MarketPopup/MarketMargin/MarketVBox/MarketSections/FertilizerSection/FertilizerContainer
 @onready var market_log_container: VBoxContainer = $MarketPopup/MarketMargin/MarketVBox/MarketLogScroll/MarketLogContainer
+@onready var research_button: Button = $WalletPanel/ResearchButton
+@onready var research_popup: PopupPanel = $ResearchPopup
+@onready var research_entries_scroll: ScrollContainer = $ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll
+@onready var research_entries_container: VBoxContainer = $ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer
+@onready var research_empty_label: Label = $ResearchPopup/MarginContainer/VBoxContainer/EmptyLabel
+@onready var research_close_button: Button = $ResearchPopup/MarginContainer/VBoxContainer/CloseButton
 var current_tile: Node = null
 var field_manager: Node = null
+var _latest_inventory: Dictionary = {}
+var _latest_supplies: Dictionary = {}
 var _market_item_buttons: Dictionary = {}
 var _market_item_stock_labels: Dictionary = {}
+var _latest_research_state: Dictionary = {}
+var _research_rows: Dictionary = {}
+var _menu_entries: Dictionary = {}
+var _menu_id_counter: int = 1
+var _current_menu_field_state: int = FIELD_STATE_UNKNOWN
 
 func _ready():
 	add_to_group("ui")      # damit Tiles dich finden
@@ -48,25 +70,34 @@ func _ready():
 		market_button.pressed.connect(_on_market_button_pressed)
 	if market_close_button:
 		market_close_button.pressed.connect(_on_market_close_pressed)
+	if research_button:
+		research_button.pressed.connect(_on_research_button_pressed)
+	if research_close_button:
+		research_close_button.pressed.connect(_on_research_close_pressed)
 	if field_manager == null:
 		call_deferred("_refresh_field_manager")
 	GameState.money_changed.connect(_on_money_changed)
 	GameState.inventory_changed.connect(_on_inventory_changed)
 	GameState.supplies_changed.connect(_on_supplies_changed)
 	GameState.market_log_updated.connect(_on_market_log_updated)
+	GameState.rent_cost_changed.connect(_on_rent_cost_changed)
+	GameState.research_state_changed.connect(_on_research_state_changed)
+	_latest_inventory = GameState.get_inventory()
+	_latest_supplies = GameState.get_supplies()
 	_on_money_changed(GameState.money)
-	_on_inventory_changed(GameState.get_inventory())
+	_on_inventory_changed(_latest_inventory)
 	_setup_market_ui()
-	_on_supplies_changed(GameState.get_supplies())
+	_setup_research_ui()
+	_on_supplies_changed(_latest_supplies)
 	_on_market_log_updated(GameState.get_market_log())
-	menu.clear()
-	menu.add_item(MENU_LABELS.get(1, "Weizen"), 1)
-	menu.add_item(MENU_LABELS.get(2, "Kartoffel"), 2)
-	menu.add_separator()
-	menu.add_item(MENU_LABELS.get(0, "Abbrechen"), 0)
-	menu.id_pressed.connect(_on_menu_id)
-	menu.position = Vector2(200, 200)
-	_refresh_crop_menu()
+	_on_rent_cost_changed(GameState.get_hourly_rent_cost())
+	_on_research_state_changed(GameState.get_research_state())
+	if menu:
+		menu.clear()
+		var callback := Callable(self, "_on_menu_id")
+		if not menu.id_pressed.is_connected(callback):
+			menu.id_pressed.connect(callback)
+		menu.position = Vector2(200, 200)
 	print("PlantMenu ready (wartet auf Feldklick)")
 
 func _popup_at_position(screen_pos: Vector2):
@@ -86,36 +117,243 @@ func _popup_at_position(screen_pos: Vector2):
 	print("Menu popup at:", popup_rect.position)
 
 func open_for_tile(tile: Node, screen_pos: Vector2):
+	if menu == null:
+		return
+	if tile == null or not is_instance_valid(tile):
+		return
 	current_tile = tile
+	var has_entries := _build_menu_for_tile(tile)
+	if not has_entries:
+		current_tile = null
+		return
 	menu.visible = true
 	_popup_at_position(screen_pos)
 	print("Menu opened for tile:", tile.name)
 
 
 func _on_menu_id(id: int):
-	if id == 0:
-		menu.hide()
-		current_tile = null
+	if id == MENU_CANCEL_ID:
+		_close_menu()
 		return
-	if current_tile == null:
-		menu.hide()
+	if current_tile == null or not is_instance_valid(current_tile):
+		_close_menu()
 		return
-	var crop_id: String = str(MENU_ID_TO_CROP.get(id, ""))
+	var metadata_raw: Variant = _menu_entries.get(id, {})
+	if not (metadata_raw is Dictionary):
+		_close_menu()
+		return
+	var metadata: Dictionary = metadata_raw
+	if metadata.is_empty():
+		_close_menu()
+		return
+	var action := String(metadata.get("action", ""))
+	var success := false
+	match action:
+		MENU_ACTION_PLANT:
+			success = _handle_menu_plant(metadata)
+		MENU_ACTION_FERTILIZE:
+			success = _handle_menu_fertilize(metadata)
+		_:
+			print("Unbekannte Menu-Aktion:", action)
+	if success:
+		_close_menu()
+	else:
+		if menu and menu.visible and is_instance_valid(current_tile):
+			_build_menu_for_tile(current_tile)
+
+func _handle_menu_plant(metadata: Dictionary) -> bool:
+	if current_tile == null or not is_instance_valid(current_tile):
+		return false
+	var crop_id := String(metadata.get("crop_id", ""))
 	if crop_id.is_empty():
-		menu.hide()
-		current_tile = null
-		return
-	var seed_id: String = str(CROP_TO_SEED.get(crop_id, ""))
+		return false
+	var state := _resolve_field_state(current_tile)
+	if state != FIELD_STATE_EMPTY:
+		print("Feld ist nicht frei fuer Aussaat:", current_tile.name)
+		return false
+	var seed_id := String(metadata.get("seed_id", ""))
+	if seed_id.is_empty():
+		seed_id = _get_seed_id_for_crop(crop_id)
 	if not seed_id.is_empty():
 		if not GameState.has_supply(seed_id):
 			print("Es sind keine %s verfuegbar. Bitte kaufe Samen im Markt." % GameState.get_display_name(seed_id))
-			return
+			return false
 		if not GameState.consume_supply(seed_id):
 			print("Fehler beim Verbrauchen von %s." % GameState.get_display_name(seed_id))
-			return
-	current_tile.call_deferred("start_growth", crop_id, 10.0)  # 10s Timer
-	menu.hide()
+			return false
+	var growth_seconds: float = DEFAULT_GROWTH_SECONDS
+	if GameState.has_method("get_crop_growth_duration"):
+		growth_seconds = GameState.get_crop_growth_duration(crop_id)
+	elif GameState.has_method("get_crop_base_growth_time"):
+		growth_seconds = GameState.get_crop_base_growth_time(crop_id)
+	if growth_seconds <= 0.0:
+		growth_seconds = DEFAULT_GROWTH_SECONDS
+	current_tile.call_deferred("start_growth", crop_id, growth_seconds)
+	return true
+
+func _handle_menu_fertilize(metadata: Dictionary) -> bool:
+	if current_tile == null or not is_instance_valid(current_tile):
+		return false
+	var state := _resolve_field_state(current_tile)
+	if state != FIELD_STATE_GROWING:
+		print("Duenger kann nur auf wachsende Felder angewendet werden.")
+		return false
+	var fertilizer_id := String(metadata.get("fertilizer_id", ""))
+	if fertilizer_id.is_empty():
+		return false
+	if not GameState.has_supply(fertilizer_id):
+		print("Kein %s verfuegbar. Kaufe ihn im Markt." % GameState.get_display_name(fertilizer_id))
+		return false
+	if not current_tile.has_method("apply_fertilizer"):
+		print("Dieses Feld akzeptiert keinen Duenger:", current_tile.name)
+		return false
+	if GameState.get_fertilizer_effects(fertilizer_id).is_empty():
+		print("Duenger hat keine Effekte und wird ignoriert:", fertilizer_id)
+		return false
+	if current_tile.has_method("can_apply_fertilizer") and not current_tile.call("can_apply_fertilizer", fertilizer_id):
+		print("Aktueller Feldstatus erlaubt keinen Duenger:", current_tile.name)
+		return false
+	if not GameState.consume_supply(fertilizer_id):
+		print("Fehler beim Verbrauchen von %s." % GameState.get_display_name(fertilizer_id))
+		return false
+	var application_result: Variant = current_tile.call("apply_fertilizer", fertilizer_id)
+	if application_result is bool and not application_result:
+		print("Duenger konnte nicht angewendet werden auf", current_tile.name)
+		return false
+	return true
+
+func _close_menu() -> void:
+	if menu:
+		menu.hide()
+	_menu_entries.clear()
+	_menu_id_counter = 1
 	current_tile = null
+	_current_menu_field_state = FIELD_STATE_UNKNOWN
+
+func _build_menu_for_tile(tile: Node) -> bool:
+	if menu == null:
+		return false
+	_reset_menu_state()
+	_current_menu_field_state = _resolve_field_state(tile)
+	var total_added := 0
+	if _current_menu_field_state == FIELD_STATE_EMPTY:
+		total_added += _add_seed_menu_entries()
+	elif _current_menu_field_state == FIELD_STATE_GROWING:
+		total_added += _add_fertilizer_menu_entries()
+	if total_added <= 0:
+		_reset_menu_state()
+		return false
+	menu.add_separator()
+	_add_cancel_entry()
+	return true
+
+func _reset_menu_state() -> void:
+	_menu_entries.clear()
+	_menu_id_counter = 1
+	if menu:
+		menu.clear()
+
+func _request_menu_id() -> int:
+	var id := _menu_id_counter
+	_menu_id_counter += 1
+	if id == MENU_CANCEL_ID:
+		return _request_menu_id()
+	return id
+
+func _add_cancel_entry() -> void:
+	menu.add_item("Abbrechen", MENU_CANCEL_ID)
+	var index := menu.get_item_index(MENU_CANCEL_ID)
+	if index == -1:
+		index = menu.item_count - 1
+	var metadata := {"action": "cancel"}
+	menu.set_item_metadata(index, metadata)
+	_menu_entries[MENU_CANCEL_ID] = metadata
+
+func _get_seed_id_for_crop(crop_id: String) -> String:
+	if GameState.has_method("get_crop_seed_id"):
+		var resolved := String(GameState.get_crop_seed_id(crop_id))
+		if not resolved.is_empty():
+			return resolved
+	return String(CROP_TO_SEED.get(crop_id, ""))
+
+func _add_seed_menu_entries() -> int:
+	var added := 0
+	for crop_id in CROP_MENU_ORDER:
+		var crop_name := GameState.get_display_name(crop_id)
+		var seed_id := _get_seed_id_for_crop(crop_id)
+		var seed_count := 0
+		if not seed_id.is_empty():
+			seed_count = GameState.get_supply_amount(seed_id)
+		var available := seed_id.is_empty() or seed_count > 0
+		var label := crop_name
+		if not seed_id.is_empty():
+			label = "%s (Samen: %d)" % [crop_name, seed_count]
+		var tooltip := ""
+		if not available and not seed_id.is_empty():
+			tooltip = "Keine %s verfuegbar. Kaufe sie im Markt." % GameState.get_display_name(seed_id)
+		var id := _request_menu_id()
+		menu.add_item(label, id)
+		var index := menu.get_item_index(id)
+		if index == -1:
+			index = menu.item_count - 1
+		menu.set_item_disabled(index, not available)
+		if not tooltip.is_empty():
+			menu.set_item_tooltip(index, tooltip)
+		var metadata := {
+			"action": MENU_ACTION_PLANT,
+			"crop_id": crop_id,
+			"seed_id": seed_id,
+		}
+		menu.set_item_metadata(index, metadata)
+		_menu_entries[id] = metadata
+		added += 1
+	return added
+
+func _add_fertilizer_menu_entries() -> int:
+	var added := 0
+	var catalog := GameState.get_market_catalog()
+	var fertilizer_entries: Array = catalog.get("fertilizer", [])
+	for entry in fertilizer_entries:
+		if not entry is Dictionary:
+			continue
+		var entry_dict := entry as Dictionary
+		var item_id := String(entry_dict.get("id", ""))
+		if item_id.is_empty():
+			continue
+		var display_name := GameState.get_display_name(item_id)
+		var owned := GameState.get_supply_amount(item_id)
+		var label := "%s (Bestand: %d)" % [display_name, owned]
+		var tooltip_lines := GameState.get_fertilizer_effect_lines(item_id)
+		tooltip_lines.append("Wirkt auf wachsende Felder.")
+		if owned <= 0:
+			tooltip_lines.append("Nicht auf Lager. Kaufe im Markt.")
+		var tooltip := "\n".join(tooltip_lines)
+		var id := _request_menu_id()
+		menu.add_item(label, id)
+		var index := menu.get_item_index(id)
+		if index == -1:
+			index = menu.item_count - 1
+		menu.set_item_disabled(index, owned <= 0)
+		if not tooltip.is_empty():
+			menu.set_item_tooltip(index, tooltip)
+		var metadata := {
+			"action": MENU_ACTION_FERTILIZE,
+			"fertilizer_id": item_id,
+		}
+		menu.set_item_metadata(index, metadata)
+		_menu_entries[id] = metadata
+		added += 1
+	return added
+
+func _resolve_field_state(tile: Node) -> int:
+	if tile == null or not is_instance_valid(tile):
+		return FIELD_STATE_UNKNOWN
+	if tile.has_method("get_field_state"):
+		return int(tile.call("get_field_state"))
+	var raw_state = tile.get("state")
+	if typeof(raw_state) == TYPE_INT:
+		return int(raw_state)
+	return FIELD_STATE_UNKNOWN
 
 func _on_money_changed(amount: int) -> void:
 	if money_label:
@@ -123,6 +361,18 @@ func _on_money_changed(amount: int) -> void:
 	_update_buy_button()
 	_update_market_money(amount)
 	_update_market_buttons_state(amount)
+	_update_research_rows()
+
+func _on_rent_cost_changed(hourly_cost: int) -> void:
+	if rent_label:
+		var rented_fields := 0
+		if GameState.has_method("get_rented_field_count"):
+			rented_fields = GameState.get_rented_field_count()
+		if rented_fields <= 0:
+			rent_label.text = "Mietkosten: 0 G/Stunde"
+		else:
+			var feld_text := "Felder" if rented_fields != 1 else "Feld"
+			rent_label.text = "Mietkosten: %d G/Stunde (%d %s)" % [hourly_cost, rented_fields, feld_text]
 
 func _on_buy_field_pressed() -> void:
 	if field_manager == null:
@@ -140,7 +390,12 @@ func _update_buy_button() -> void:
 		field_manager = _find_field_manager()
 	var cost: int = 10
 	if field_manager and field_manager.has_method("get_field_cost"):
-		cost = field_manager.get_field_cost()
+		var field_cost_variant: Variant = field_manager.call("get_field_cost")
+		match typeof(field_cost_variant):
+			TYPE_INT:
+				cost = int(field_cost_variant)
+			TYPE_FLOAT:
+				cost = int(round(float(field_cost_variant)))
 	buy_field_button.text = "Feld kaufen (%d)" % cost
 	if field_manager == null:
 		buy_field_button.disabled = true
@@ -151,35 +406,6 @@ func _update_buy_button() -> void:
 	else:
 		disabled = GameState.money < cost
 	buy_field_button.disabled = disabled
-
-func _refresh_crop_menu() -> void:
-	if menu == null:
-		return
-	for index in range(menu.item_count):
-		var item_id: int = menu.get_item_id(index)
-		if item_id == 0:
-			menu.set_item_text(index, MENU_LABELS.get(item_id, menu.get_item_text(index)))
-			menu.set_item_disabled(index, false)
-			menu.set_item_tooltip(index, "")
-			continue
-		if not MENU_ID_TO_CROP.has(item_id):
-			continue
-		var crop_id: String = str(MENU_ID_TO_CROP[item_id])
-		var seed_id: String = str(CROP_TO_SEED.get(crop_id, ""))
-		var base_text: String = str(MENU_LABELS.get(item_id, menu.get_item_text(index)))
-		if seed_id.is_empty():
-			menu.set_item_text(index, base_text)
-			menu.set_item_disabled(index, false)
-			menu.set_item_tooltip(index, "")
-			continue
-		var seed_count: int = GameState.get_supply_amount(seed_id)
-		menu.set_item_text(index, "%s (Samen: %d)" % [base_text, seed_count])
-		var has_enough := seed_count > 0
-		menu.set_item_disabled(index, not has_enough)
-		if has_enough:
-			menu.set_item_tooltip(index, "")
-		else:
-			menu.set_item_tooltip(index, "Keine %s verf\u00fcgbar. Kaufe sie im Markt." % GameState.get_display_name(seed_id))
 
 func _find_field_manager() -> Node:
 	var managers: Array[Node] = get_tree().get_nodes_in_group("field_manager")
@@ -202,31 +428,40 @@ func _on_storage_close_pressed() -> void:
 		storage_popup.hide()
 
 func _on_inventory_changed(storage: Dictionary) -> void:
-	_update_storage_view(storage)
+	_latest_inventory = storage.duplicate(true)
+	_update_storage_view()
 
 func _on_supplies_changed(supplies: Dictionary) -> void:
-	_update_market_supplies(supplies)
-	_refresh_crop_menu()
+	_latest_supplies = supplies.duplicate(true)
+	_update_market_supplies(_latest_supplies)
+	_update_storage_view()
+	if menu and menu.visible and current_tile and is_instance_valid(current_tile):
+		_build_menu_for_tile(current_tile)
 
 func _on_market_log_updated(entries: Array) -> void:
 	_update_market_log(entries)
 
-func _update_storage_view(storage: Dictionary) -> void:
+func _update_storage_view() -> void:
 	if storage_items_container == null or storage_empty_label == null or storage_items_scroll == null:
 		return
 	_clear_storage_items()
-	if storage.is_empty():
+	var categories := _collect_storage_categories()
+	var has_entries := false
+	for category_entry in categories:
+		var category_id := String(category_entry.get("id", ""))
+		var items: Array = category_entry.get("items", [])
+		if items.is_empty():
+			continue
+		has_entries = true
+		var section := _create_storage_section(category_id, items)
+		if section:
+			storage_items_container.add_child(section)
+	if not has_entries:
 		storage_items_scroll.visible = false
 		storage_empty_label.visible = true
 		return
 	storage_empty_label.visible = false
 	storage_items_scroll.visible = true
-	var crop_ids := storage.keys()
-	crop_ids.sort()
-	for crop_id in crop_ids:
-		var amount: float = float(storage.get(crop_id, 0.0))
-		var row := _create_storage_row(crop_id, amount)
-		storage_items_container.add_child(row)
 
 func _format_tons(amount: float) -> String:
 	var rounded: float = round(amount * 100.0) / 100.0
@@ -238,14 +473,100 @@ func _clear_storage_items() -> void:
 	for child in storage_items_container.get_children():
 		child.queue_free()
 
-func _create_storage_row(item_id: String, amount: float) -> HBoxContainer:
+func _collect_storage_categories() -> Array:
+	var categories: Dictionary = {}
+	for category_id in STORAGE_CATEGORY_ORDER:
+		categories[category_id] = []
+	for item_id in _latest_supplies.keys():
+		var amount: int = int(_latest_supplies.get(item_id, 0))
+		if amount <= 0:
+			continue
+		var category_id := GameState.get_item_category(item_id)
+		if not categories.has(category_id):
+			categories[category_id] = []
+		var items: Array = categories[category_id]
+		items.append({
+			"id": item_id,
+			"amount": amount,
+		})
+	for item_id in _latest_inventory.keys():
+		var amount: float = float(_latest_inventory.get(item_id, 0.0))
+		if amount <= 0.0:
+			continue
+		var category_id := GameState.ITEM_CATEGORY_HARVESTED
+		if not categories.has(category_id):
+			categories[category_id] = []
+		var harvest_items: Array = categories[category_id]
+		harvest_items.append({
+			"id": item_id,
+			"amount": amount,
+		})
+	var ordered: Array = []
+	for category_id in STORAGE_CATEGORY_ORDER:
+		var list: Array = categories.get(category_id, [])
+		list.sort_custom(Callable(self, "_sort_storage_items_by_name"))
+		ordered.append({
+			"id": category_id,
+			"items": list,
+		})
+	for category_id in categories.keys():
+		if STORAGE_CATEGORY_ORDER.has(category_id):
+			continue
+		var list: Array = categories[category_id]
+		list.sort_custom(Callable(self, "_sort_storage_items_by_name"))
+		ordered.append({
+			"id": category_id,
+			"items": list,
+		})
+	return ordered
+
+func _sort_storage_items_by_name(a: Dictionary, b: Dictionary) -> bool:
+	var name_a: String = GameState.get_display_name(String(a.get("id", "")))
+	var name_b: String = GameState.get_display_name(String(b.get("id", "")))
+	return name_a.casecmp_to(name_b) < 0
+
+func _create_storage_section(category_id: String, items: Array) -> VBoxContainer:
+	var section := VBoxContainer.new()
+	section.name = "StorageSection_%s" % category_id
+	section.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	section.add_theme_constant_override("separation", 6)
+
+	var header := Label.new()
+	header.text = GameState.get_category_display_name(category_id)
+	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	section.add_child(header)
+
+	for item_data in items:
+		if not item_data is Dictionary:
+			continue
+		var item_id := String(item_data.get("id", ""))
+		if item_id.is_empty():
+			continue
+		var amount_value: Variant = item_data.get("amount", 0)
+		var row := _create_storage_row(category_id, item_id, amount_value)
+		if row:
+			section.add_child(row)
+	return section
+
+func _create_storage_row(category_id: String, item_id: String, amount: Variant) -> Control:
+	match category_id:
+		GameState.ITEM_CATEGORY_HARVESTED:
+			return _create_storage_harvest_row(item_id, float(amount))
+		_:
+			return _create_storage_supply_row(item_id, int(amount))
+
+func _create_storage_harvest_row(item_id: String, amount: float) -> HBoxContainer:
 	var row := HBoxContainer.new()
-	row.name = "StorageRow_%s" % item_id
+	row.name = "StorageHarvest_%s" % item_id
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_theme_constant_override("separation", 8)
 
 	var name_label := Label.new()
-	name_label.text = "%s (%s t verfügbar)" % [GameState.get_display_name(item_id), _format_tons(amount)]
+	var unit: String = GameState.get_item_unit(item_id)
+	if unit.is_empty():
+		unit = "t"
+	name_label.text = "%s (%s %s verfuegbar)" % [GameState.get_display_name(item_id), _format_tons(amount), unit]
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	row.add_child(name_label)
@@ -276,6 +597,31 @@ func _create_storage_row(item_id: String, amount: float) -> HBoxContainer:
 	minus_button.pressed.connect(Callable(self, "_on_storage_adjust_pressed").bind(item_id, amount_input, -1.0))
 	sell_button.pressed.connect(Callable(self, "_on_storage_sell_pressed").bind(item_id, amount_input))
 	amount_input.text_submitted.connect(Callable(self, "_on_storage_sell_pressed").bind(item_id, amount_input))
+
+	return row
+
+func _create_storage_supply_row(item_id: String, amount: int) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.name = "StorageSupply_%s" % item_id
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 8)
+
+	var name_label := Label.new()
+	name_label.text = GameState.get_display_name(item_id)
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	row.add_child(name_label)
+
+	var amount_label := Label.new()
+	var unit: String = GameState.get_item_unit(item_id)
+	if unit.is_empty():
+		unit = "Stk"
+	var formatted_amount: String = "%d" % int(amount)
+	amount_label.text = "%s %s" % [formatted_amount, unit]
+	amount_label.size_flags_horizontal = Control.SIZE_FILL
+	amount_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	amount_label.custom_minimum_size = Vector2(120, 0)
+	row.add_child(amount_label)
 
 	return row
 
@@ -373,6 +719,14 @@ func _create_market_row(entry: Dictionary) -> HBoxContainer:
 	buy_button.focus_mode = Control.FOCUS_NONE
 	row.add_child(buy_button)
 
+	var tooltip := GameState.get_market_item_tooltip(item_id)
+	if not tooltip.is_empty():
+		row.tooltip_text = tooltip
+		name_label.tooltip_text = tooltip
+		price_label.tooltip_text = tooltip
+		owned_label.tooltip_text = tooltip
+		buy_button.tooltip_text = tooltip
+
 	_market_item_buttons[item_id] = buy_button
 	_market_item_stock_labels[item_id] = owned_label
 	buy_button.set_meta("price", price)
@@ -437,6 +791,208 @@ func _update_market_log(entries: Array) -> void:
 		label.text = _format_market_log_entry(entry_dict)
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		market_log_container.add_child(label)
+
+func _setup_research_ui() -> void:
+	if research_entries_container == null or research_empty_label == null:
+		return
+	for child in research_entries_container.get_children():
+		child.queue_free()
+	_research_rows.clear()
+	var crop_ids: Array = []
+	if GameState.has_method("get_crop_ids"):
+		crop_ids = GameState.get_crop_ids()
+	else:
+		crop_ids = CROP_MENU_ORDER.duplicate()
+	var added := false
+	var first_section := true
+	for crop_variant in crop_ids:
+		var crop_id := String(crop_variant)
+		if crop_id.is_empty():
+			continue
+		var options_variant := []
+		if GameState.has_method("get_research_options_for_crop"):
+			options_variant = GameState.get_research_options_for_crop(crop_id)
+		var options: Array = []
+		if options_variant is Array:
+			options = options_variant
+		if options.is_empty():
+			continue
+		var ordered: Array = []
+		for prefer in ["yield", "speed"]:
+			if options.has(prefer):
+				ordered.append(prefer)
+		for option in options:
+			if not ordered.has(option):
+				ordered.append(option)
+		var section := VBoxContainer.new()
+		section.name = "ResearchSection_%s" % crop_id
+		section.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		section.add_theme_constant_override("separation", 4)
+		var header := Label.new()
+		header.text = GameState.get_display_name(crop_id)
+		header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		header.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		header.add_theme_font_size_override("font_size", 18)
+		section.add_child(header)
+		var section_entries := 0
+		for option_variant in ordered:
+			var research_type := String(option_variant)
+			var entry := _create_research_entry(crop_id, research_type)
+			if entry.is_empty():
+				continue
+			section.add_child(entry["container"])
+			var key := String(entry.get("key", ""))
+			_research_rows[key] = entry
+			section_entries += 1
+		if section_entries <= 0:
+			continue
+		if not first_section:
+			var separator := HSeparator.new()
+			separator.name = "ResearchSeparator_%s" % crop_id
+			research_entries_container.add_child(separator)
+		first_section = false
+		research_entries_container.add_child(section)
+		added = true
+	if research_entries_container:
+		research_entries_container.visible = added
+	if research_entries_scroll:
+		research_entries_scroll.visible = added
+	if research_empty_label:
+		research_empty_label.visible = not added
+	_update_research_rows()
+
+func _create_research_entry(crop_id: String, research_type: String) -> Dictionary:
+	if crop_id.is_empty() or research_type.is_empty():
+		return {}
+	if not GameState.has_method("get_research_info"):
+		return {}
+	var info := GameState.get_research_info(crop_id, research_type)
+	if info.is_empty():
+		return {}
+	var container := VBoxContainer.new()
+	container.name = "Research_%s_%s" % [crop_id, research_type]
+	container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	container.add_theme_constant_override("separation", 2)
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 8)
+	container.add_child(row)
+	var name_label := Label.new()
+	name_label.text = String(info.get("label", research_type.capitalize()))
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	row.add_child(name_label)
+	var level_label := Label.new()
+	level_label.size_flags_horizontal = Control.SIZE_FILL
+	level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	level_label.custom_minimum_size = Vector2(130, 0)
+	row.add_child(level_label)
+	var effect_label := Label.new()
+	effect_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	effect_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	effect_label.custom_minimum_size = Vector2(220, 0)
+	row.add_child(effect_label)
+	var cost_label := Label.new()
+	cost_label.size_flags_horizontal = Control.SIZE_FILL
+	cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	cost_label.custom_minimum_size = Vector2(160, 0)
+	row.add_child(cost_label)
+	var button := Button.new()
+	button.text = "Forschen"
+	button.focus_mode = Control.FOCUS_NONE
+	button.pressed.connect(Callable(self, "_on_research_upgrade_pressed").bind(crop_id, research_type))
+	row.add_child(button)
+	var description_label := Label.new()
+	description_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	description_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	description_label.visible = false
+	container.add_child(description_label)
+	return {
+		"key": "%s::%s" % [crop_id, research_type],
+		"crop_id": crop_id,
+		"research_type": research_type,
+		"container": container,
+		"name_label": name_label,
+		"level_label": level_label,
+		"effect_label": effect_label,
+		"cost_label": cost_label,
+		"button": button,
+		"description_label": description_label,
+	}
+
+func _update_research_rows() -> void:
+	if _research_rows.is_empty():
+		return
+	for entry in _research_rows.values():
+		if not (entry is Dictionary):
+			continue
+		var data: Dictionary = entry
+		var crop_id := String(data.get("crop_id", ""))
+		var research_type := String(data.get("research_type", ""))
+		if crop_id.is_empty() or research_type.is_empty():
+			continue
+		if not GameState.has_method("get_research_info"):
+			continue
+		var info := GameState.get_research_info(crop_id, research_type)
+		if info.is_empty():
+			continue
+		var level_label: Label = data.get("level_label", null)
+		var effect_label: Label = data.get("effect_label", null)
+		var cost_label: Label = data.get("cost_label", null)
+		var description_label: Label = data.get("description_label", null)
+		var button: Button = data.get("button", null)
+		var name_label: Label = data.get("name_label", null)
+		var level := int(info.get("level", 0))
+		var max_level := int(info.get("max_level", 0))
+		var level_text := "Stufe %d" % level
+		if max_level > 0:
+			level_text = "Stufe %d / %d" % [level, max_level]
+		if level_label:
+			level_label.text = level_text
+		if effect_label:
+			effect_label.text = String(info.get("effect_text", ""))
+		var is_maxed := bool(info.get("is_maxed", false))
+		var next_cost := int(info.get("next_cost", 0))
+		if cost_label:
+			if is_maxed:
+				cost_label.text = "Max. Stufe erreicht"
+			elif next_cost > 0:
+				cost_label.text = "Kosten: %d G" % next_cost
+			else:
+				cost_label.text = ""
+		var description := String(info.get("description", ""))
+		if description_label:
+			description_label.text = description
+			description_label.visible = not description.is_empty()
+		if button:
+			button.disabled = is_maxed or next_cost <= 0 or GameState.money < next_cost
+			button.tooltip_text = description
+		if name_label:
+			name_label.tooltip_text = description
+
+func _on_research_button_pressed() -> void:
+	if research_popup:
+		_update_research_rows()
+		research_popup.popup_centered_ratio(0.8)
+
+func _on_research_close_pressed() -> void:
+	if research_popup:
+		research_popup.hide()
+
+func _on_research_upgrade_pressed(crop_id: String, research_type: String) -> void:
+	if not GameState.has_method("research_crop"):
+		return
+	if not GameState.research_crop(crop_id, research_type):
+		print("Forschung fehlgeschlagen fuer", crop_id, research_type)
+	_update_research_rows()
+
+func _on_research_state_changed(state: Dictionary) -> void:
+	if state is Dictionary:
+		_latest_research_state = state.duplicate(true)
+	if _research_rows.is_empty():
+		_setup_research_ui()
+	else:
+		_update_research_rows()
 
 func _format_market_amount(amount: float, unit: String) -> String:
 	match unit:
