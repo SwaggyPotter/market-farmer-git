@@ -6,6 +6,11 @@ signal supplies_changed(supplies: Dictionary)
 signal market_log_updated(entries: Array)
 signal rent_cost_changed(hourly_cost: int)
 signal research_state_changed(state: Dictionary)
+signal farmers_changed(farmers: Array)
+signal fields_changed(field_names: Array)
+signal build_catalog_changed(catalog: Dictionary)
+signal build_mode_changed(build_id: String)
+signal build_constructed(build_id: String, data: Dictionary)
 
 const START_MONEY := 100
 const ITEM_DISPLAY_NAMES := {
@@ -46,6 +51,12 @@ const FERTILIZER_DEFINITIONS := {
 const MARKET_LOG_LIMIT := 20
 const FIELD_RENT_PER_HOUR := 5
 const RENT_INTERVAL_SECONDS := 3600.0
+const FIELD_STATE_EMPTY := 0
+const FIELD_STATE_GROWING := 1
+const FIELD_STATE_READY := 2
+const FARMER_STATUS_IDLE := "idle"
+const FARMER_STATUS_ASSIGNED := "assigned"
+const FARMER_AUTO_HARVEST_DELAY := 1.5
 const ITEM_CATEGORY_HARVESTED := "harvested"
 const ITEM_CATEGORY_SEEDS := "seeds"
 const ITEM_CATEGORY_FERTILIZER := "fertilizer"
@@ -60,6 +71,38 @@ const ITEM_UNITS := {
 	ITEM_CATEGORY_SEEDS: "Stk",
 	ITEM_CATEGORY_FERTILIZER: "Stk",
 	ITEM_CATEGORY_HARVESTED: "t",
+}
+const BUILD_CATALOG := {
+	"road_straight": {
+		"label": "Strasse",
+		"description": "Gerade Strasse, perfekt um Felder zu verbinden.",
+		"cost": 25,
+		"category": "road",
+		"category_label": "Strassen",
+		"shape": "box",
+		"size": Vector3(4.0, 0.15, 1.0),
+		"color": Color(0.2, 0.2, 0.2),
+	},
+	"decor_planter": {
+		"label": "Blumenkuebel",
+		"description": "Dekoratives Element fuer deinen Hof.",
+		"cost": 35,
+		"category": "decor",
+		"category_label": "Dekoration",
+		"shape": "cylinder",
+		"size": Vector3(0.9, 1.1, 0.9),
+		"color": Color(0.7, 0.5, 0.2),
+	},
+	"decor_tree": {
+		"label": "Baum",
+		"description": "Sorgt fuer Schatten und Atmosphaere.",
+		"cost": 45,
+		"category": "decor",
+		"category_label": "Dekoration",
+		"shape": "capsule",
+		"size": Vector3(1.2, 3.0, 1.2),
+		"color": Color(0.18, 0.45, 0.18),
+	},
 }
 const RESEARCH_TYPE_YIELD := "yield"
 const RESEARCH_TYPE_SPEED := "speed"
@@ -135,6 +178,15 @@ var _market_log: Array = []
 var _paying_field_count: int = 0
 var _rent_timer: Timer = null
 var _research_state: Dictionary = {}
+var _farmers: Array = []
+var _farmer_id_counter: int = 1
+var _field_assignments: Dictionary = {}
+var _field_nodes: Dictionary = {}
+var _known_field_names: Array[String] = []
+var _pending_auto_harvest: Dictionary = {}
+var _build_catalog: Dictionary = BUILD_CATALOG.duplicate(true)
+var _active_build_mode: String = ""
+var _built_structures: Array = []
 
 func _ready() -> void:
 	_rent_timer = _ensure_rent_timer()
@@ -146,6 +198,7 @@ func _ready() -> void:
 	market_log_updated.emit(_market_log.duplicate(true))
 	rent_cost_changed.emit(get_hourly_rent_cost())
 	research_state_changed.emit(get_research_state())
+	build_catalog_changed.emit(get_build_catalog())
 
 func _set_money(value: int) -> void:
 	var clamped: int = value if value >= 0 else 0
@@ -153,6 +206,8 @@ func _set_money(value: int) -> void:
 		return
 	_money = clamped
 	money_changed.emit(_money)
+	if not _active_build_mode.is_empty() and not can_afford_build(_active_build_mode):
+		cancel_build_mode()
 
 func add_money(amount: int) -> void:
 	if amount == 0:
@@ -189,6 +244,94 @@ func get_market_catalog() -> Dictionary:
 func get_market_log() -> Array:
 	return _market_log.duplicate(true)
 
+func get_build_catalog() -> Dictionary:
+	return _build_catalog.duplicate(true)
+
+func get_build_definition(build_id: String) -> Dictionary:
+	if not _build_catalog.has(build_id):
+		return {}
+	var definition_variant: Variant = _build_catalog[build_id]
+	if not (definition_variant is Dictionary):
+		return {}
+	var definition: Dictionary = definition_variant
+	return definition.duplicate(true)
+
+func can_afford_build(build_id: String) -> bool:
+	if not _build_catalog.has(build_id):
+		return false
+	var definition_variant: Variant = _build_catalog[build_id]
+	if not (definition_variant is Dictionary):
+		return false
+	var definition: Dictionary = definition_variant
+	var cost := int(definition.get("cost", 0))
+	return _money >= cost
+
+func get_active_build_mode() -> String:
+	return _active_build_mode
+
+func start_build_mode(build_id: String) -> bool:
+	if build_id.is_empty():
+		cancel_build_mode()
+		return false
+	if not _build_catalog.has(build_id):
+		return false
+	if not can_afford_build(build_id):
+		return false
+	if _active_build_mode == build_id:
+		return true
+	_active_build_mode = build_id
+	build_mode_changed.emit(_active_build_mode)
+	return true
+
+func cancel_build_mode() -> void:
+	if _active_build_mode.is_empty():
+		return
+	_active_build_mode = ""
+	build_mode_changed.emit("")
+
+func spend_for_build(build_id: String) -> bool:
+	if build_id.is_empty():
+		return false
+	if not _build_catalog.has(build_id):
+		return false
+	var definition_variant: Variant = _build_catalog[build_id]
+	if not (definition_variant is Dictionary):
+		return false
+	var definition: Dictionary = definition_variant
+	var cost := int(definition.get("cost", 0))
+	if cost <= 0:
+		return true
+	return try_spend(cost)
+
+func register_build_instance(build_id: String, metadata: Dictionary = {}) -> Dictionary:
+	if build_id.is_empty():
+		return {}
+	var entry: Dictionary = {
+		"id": build_id,
+		"metadata": metadata.duplicate(true),
+	}
+	var definition: Dictionary = get_build_definition(build_id)
+	if not definition.is_empty():
+		entry["label"] = definition.get("label", build_id)
+		entry["cost"] = int(definition.get("cost", 0))
+		entry["category"] = definition.get("category", "")
+		entry["category_label"] = definition.get("category_label", "")
+		entry["shape"] = definition.get("shape", "")
+		entry["size"] = definition.get("size", Vector3.ONE)
+		entry["color"] = definition.get("color", Color.WHITE)
+	_built_structures.append(entry)
+	build_constructed.emit(build_id, entry.duplicate(true))
+	return entry.duplicate(true)
+
+func get_built_structures() -> Array:
+	var list: Array = []
+	for entry_variant in _built_structures:
+		if not (entry_variant is Dictionary):
+			continue
+		var entry_dict: Dictionary = entry_variant
+		list.append(entry_dict.duplicate(true))
+	return list
+
 func get_fertilizer_definition(item_id: String) -> Dictionary:
 	if not FERTILIZER_DEFINITIONS.has(item_id):
 		return {}
@@ -196,7 +339,7 @@ func get_fertilizer_definition(item_id: String) -> Dictionary:
 
 func get_fertilizer_effects(item_id: String) -> Array[Dictionary]:
 	var definition: Dictionary = get_fertilizer_definition(item_id)
-	var duplicated: Array[Dictionary] = Array()
+	var duplicated: Array[Dictionary] = [] as Array[Dictionary]
 	if definition.is_empty():
 		return duplicated
 	var raw_effects: Variant = definition.get("effects", [])
@@ -239,7 +382,7 @@ func get_market_item_tooltip(item_id: String) -> String:
 	return "\n".join(lines)
 
 func get_market_price(item_id: String) -> int:
-	var entry := _find_market_entry(item_id)
+	var entry: Dictionary = _find_market_entry(item_id)
 	if entry.is_empty():
 		return 0
 	return int(entry.get("price", 0))
@@ -256,7 +399,7 @@ func can_buy_market_item(item_id: String, quantity: int = 1) -> bool:
 func buy_market_item(item_id: String, quantity: int = 1) -> bool:
 	if quantity <= 0:
 		return false
-	var entry := _find_market_entry(item_id)
+	var entry: Dictionary = _find_market_entry(item_id)
 	if entry.is_empty():
 		return false
 	var price: int = int(entry.get("price", 0))
@@ -648,3 +791,277 @@ func _format_research_effect(crop_id: String, research_type: String) -> String:
 			return "Wachstum: %.1f s (-%d%%)" % [current_duration, int(round(reduction_percent))]
 		_:
 			return ""
+
+func get_farmers() -> Array:
+	return _duplicate_farmer_list()
+
+func get_known_fields() -> Array:
+	return _known_field_names.duplicate()
+
+func hire_farmer(name: String = "") -> Dictionary:
+	var trimmed_name := name.strip_edges()
+	var new_id := _farmer_id_counter
+	_farmer_id_counter += 1
+	if trimmed_name.is_empty():
+		trimmed_name = "Farmer %d" % new_id
+	var farmer := {
+		"id": new_id,
+		"name": trimmed_name,
+		"status": FARMER_STATUS_IDLE,
+		"field_name": "",
+	}
+	_farmers.append(farmer)
+	_emit_farmers_changed()
+	return farmer.duplicate(true)
+
+func assign_farmer_to_field(farmer_id: int, field_name: String) -> bool:
+	var normalized := field_name.strip_edges()
+	if normalized.is_empty():
+		return unassign_farmer(farmer_id)
+	var farmer_index := _get_farmer_index(farmer_id)
+	if farmer_index == -1:
+		return false
+	_add_known_field_name(normalized)
+	_ensure_field_assignment_entry(normalized)
+	var previous_field := String(_farmers[farmer_index].get("field_name", ""))
+	if not previous_field.is_empty() and previous_field != normalized:
+		if _field_assignments.has(previous_field) and int(_field_assignments[previous_field]) == farmer_id:
+			_field_assignments[previous_field] = 0
+			_clear_field_assignment_on_node(previous_field)
+			_pending_auto_harvest.erase(previous_field)
+	var current_holder_id := int(_field_assignments.get(normalized, 0))
+	if current_holder_id == farmer_id:
+		_set_farmer_assignment(farmer_index, normalized)
+		_apply_assignment_to_field(normalized)
+		return true
+	if current_holder_id > 0 and current_holder_id != farmer_id:
+		var current_holder_index := _get_farmer_index(current_holder_id)
+		if current_holder_index != -1:
+			_farmers[current_holder_index]["field_name"] = ""
+			_farmers[current_holder_index]["status"] = FARMER_STATUS_IDLE
+	_field_assignments[normalized] = farmer_id
+	_set_farmer_assignment(farmer_index, normalized)
+	_apply_assignment_to_field(normalized)
+	_pending_auto_harvest.erase(normalized)
+	_emit_farmers_changed()
+	return true
+
+func unassign_farmer(farmer_id: int) -> bool:
+	var farmer_index := _get_farmer_index(farmer_id)
+	if farmer_index == -1:
+		return false
+	var current_field := String(_farmers[farmer_index].get("field_name", ""))
+	if current_field.is_empty():
+		return true
+	if _field_assignments.has(current_field):
+		_field_assignments[current_field] = 0
+	_clear_field_assignment_on_node(current_field)
+	_pending_auto_harvest.erase(current_field)
+	_farmers[farmer_index]["field_name"] = ""
+	_farmers[farmer_index]["status"] = FARMER_STATUS_IDLE
+	_emit_farmers_changed()
+	return true
+
+func fire_farmer(farmer_id: int) -> bool:
+	var farmer_index := _get_farmer_index(farmer_id)
+	if farmer_index == -1:
+		return false
+	unassign_farmer(farmer_id)
+	_farmers.remove_at(farmer_index)
+	_emit_farmers_changed()
+	return true
+
+func get_field_assignment(field_name: String) -> int:
+	if not _field_assignments.has(field_name):
+		return 0
+	return int(_field_assignments[field_name])
+
+func register_field(field_node: Node) -> void:
+	if field_node == null:
+		return
+	var field_name := _resolve_field_name(field_node)
+	if field_name.is_empty():
+		return
+	_field_nodes[field_name] = weakref(field_node)
+	_add_known_field_name(field_name)
+	_ensure_field_assignment_entry(field_name)
+	_apply_assignment_to_field(field_name)
+
+func unregister_field(field_node: Node) -> void:
+	if field_node == null:
+		return
+	var field_name := _resolve_field_name(field_node)
+	if field_name.is_empty():
+		return
+	_field_nodes.erase(field_name)
+	var assignment_removed := false
+	if _field_assignments.has(field_name):
+		var assigned_id := int(_field_assignments[field_name])
+		if assigned_id > 0:
+			var farmer_index := _get_farmer_index(assigned_id)
+			if farmer_index != -1:
+				_farmers[farmer_index]["field_name"] = ""
+				_farmers[farmer_index]["status"] = FARMER_STATUS_IDLE
+				assignment_removed = true
+		_field_assignments.erase(field_name)
+	_pending_auto_harvest.erase(field_name)
+	_remove_known_field_name(field_name)
+	if assignment_removed:
+		_emit_farmers_changed()
+
+func on_field_ready(field_node: Node) -> void:
+	if field_node == null:
+		return
+	var field_name := _resolve_field_name(field_node)
+	if field_name.is_empty():
+		return
+	var assigned_id := int(_field_assignments.get(field_name, 0))
+	if assigned_id <= 0:
+		return
+	_schedule_auto_harvest(field_name, assigned_id)
+
+func _schedule_auto_harvest(field_name: String, farmer_id: int) -> void:
+	if field_name.is_empty():
+		return
+	if _pending_auto_harvest.has(field_name):
+		return
+	var tree: SceneTree = get_tree()
+	if tree == null:
+		return
+	_pending_auto_harvest[field_name] = farmer_id
+	var callable: Callable = Callable(self, "_perform_auto_harvest").bind(field_name, farmer_id)
+	var timer: SceneTreeTimer = tree.create_timer(FARMER_AUTO_HARVEST_DELAY)
+	if timer:
+		timer.timeout.connect(callable)
+
+func _perform_auto_harvest(field_name: String, farmer_id: int) -> void:
+	_pending_auto_harvest.erase(field_name)
+	var assigned_id := int(_field_assignments.get(field_name, 0))
+	if assigned_id != farmer_id:
+		return
+	var field_node: Node = _get_field_node(field_name)
+	if field_node == null:
+		return
+	var state_value := _get_field_state_from_node(field_node)
+	if state_value != FIELD_STATE_READY:
+		return
+	var farmer_index := _get_farmer_index(farmer_id)
+	if farmer_index == -1:
+		return
+	var farmer_name := String(_farmers[farmer_index].get("name", ""))
+	if field_node.has_method("harvest_by_farmer"):
+		var harvested := bool(field_node.call("harvest_by_farmer", farmer_name))
+		if harvested:
+			return
+	if field_node.has_method("request_harvest"):
+		field_node.call("request_harvest")
+	else:
+		field_node.call_deferred("_harvest")
+
+func _resolve_field_name(field_node: Node) -> String:
+	if field_node == null:
+		return ""
+	return String(field_node.name).strip_edges()
+
+func _get_field_node(field_name: String) -> Node:
+	if field_name.is_empty():
+		return null
+	if not _field_nodes.has(field_name):
+		return null
+	var stored: Variant = _field_nodes[field_name]
+	if stored is WeakRef:
+		var node_obj: Object = (stored as WeakRef).get_ref()
+		if node_obj == null:
+			_field_nodes.erase(field_name)
+			return null
+		if node_obj is Node:
+			return node_obj as Node
+		return null
+	if stored is Node:
+		return stored as Node
+	return null
+
+func _duplicate_farmer_list() -> Array:
+	var duplicate: Array = []
+	for entry_variant in _farmers:
+		if not (entry_variant is Dictionary):
+			continue
+		var entry_dict: Dictionary = entry_variant
+		duplicate.append(entry_dict.duplicate(true))
+	return duplicate
+
+func _emit_farmers_changed() -> void:
+	farmers_changed.emit(_duplicate_farmer_list())
+
+func _emit_fields_changed() -> void:
+	fields_changed.emit(_known_field_names.duplicate())
+
+func _ensure_field_assignment_entry(field_name: String) -> void:
+	if field_name.is_empty():
+		return
+	if not _field_assignments.has(field_name):
+		_field_assignments[field_name] = 0
+
+func _apply_assignment_to_field(field_name: String) -> void:
+	var field_node: Node = _get_field_node(field_name)
+	if field_node == null:
+		return
+	var assigned_id := int(_field_assignments.get(field_name, 0))
+	if assigned_id > 0:
+		var farmer_index := _get_farmer_index(assigned_id)
+		if farmer_index == -1:
+			return
+		var farmer_name := String(_farmers[farmer_index].get("name", ""))
+		if field_node.has_method("set_assigned_farmer"):
+			field_node.call("set_assigned_farmer", assigned_id, farmer_name)
+	else:
+		_clear_field_assignment_on_node(field_name)
+
+func _clear_field_assignment_on_node(field_name: String) -> void:
+	var field_node: Node = _get_field_node(field_name)
+	if field_node == null:
+		return
+	if field_node.has_method("clear_assigned_farmer"):
+		field_node.call("clear_assigned_farmer")
+
+func _get_farmer_index(farmer_id: int) -> int:
+	for i in _farmers.size():
+		var entry: Variant = _farmers[i]
+		if entry is Dictionary and int(entry.get("id", -1)) == farmer_id:
+			return i
+	return -1
+
+func _set_farmer_assignment(farmer_index: int, field_name: String) -> void:
+	if farmer_index < 0 or farmer_index >= _farmers.size():
+		return
+	_farmers[farmer_index]["field_name"] = field_name
+	_farmers[farmer_index]["status"] = FARMER_STATUS_ASSIGNED if not field_name.is_empty() else FARMER_STATUS_IDLE
+
+func _add_known_field_name(field_name: String) -> void:
+	if field_name.is_empty():
+		return
+	if field_name in _known_field_names:
+		return
+	_known_field_names.append(field_name)
+	_known_field_names.sort()
+	_emit_fields_changed()
+
+func _remove_known_field_name(field_name: String) -> void:
+	if field_name.is_empty():
+		return
+	if not (field_name in _known_field_names):
+		return
+	_known_field_names.erase(field_name)
+	_emit_fields_changed()
+
+func _get_field_state_from_node(field_node: Node) -> int:
+	if field_node == null:
+		return FIELD_STATE_EMPTY
+	if field_node.has_method("get_field_state"):
+		var value: Variant = field_node.call("get_field_state")
+		if typeof(value) == TYPE_INT:
+			return int(value)
+	var raw: Variant = field_node.get("state")
+	if typeof(raw) == TYPE_INT:
+		return int(raw)
+	return FIELD_STATE_EMPTY

@@ -38,10 +38,18 @@ var phase_durations: Array[float] = []
 var phase_index: int = -1
 var fertilizer_yield_progress: float = 0.0
 var fertilizer_applications: Dictionary = {}
+var assigned_farmer_id: int = 0
+var assigned_farmer_name: String = ""
 
 func _ready():
 	body.input_event.connect(_on_input_event)
+	if GameState.has_method("register_field"):
+		GameState.register_field(self)
 	_update_visual()
+
+func _exit_tree() -> void:
+	if GameState.has_method("unregister_field"):
+		GameState.unregister_field(self)
 
 func _on_input_event(_camera, event, _position, _normal, _shape_idx):
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -196,13 +204,13 @@ func start_growth(crop_id: String, duration: float):
 		return
 	crop_type = crop_id
 	state = FieldState.GROWING
-	var base_config_duration := max(GameState.get_crop_base_growth_time(crop_type), 0.1)
-	var base_duration := duration if duration > 0.0 else base_config_duration
+	var base_config_duration: float = max(GameState.get_crop_base_growth_time(crop_type), 0.1)
+	var base_duration: float = duration if duration > 0.0 else base_config_duration
 	var research_duration := GameState.get_crop_growth_duration(crop_type)
 	var ratio := 1.0
 	if base_config_duration > 0.0:
 		ratio = research_duration / base_config_duration
-	var final_duration := max(base_duration * ratio, 0.1)
+	var final_duration: float = max(base_duration * ratio, 0.1)
 	active_phases = _get_crop_phases(crop_type)
 	phase_durations = _compute_phase_durations(final_duration, active_phases)
 	phase_index = -1
@@ -230,6 +238,8 @@ func _on_growth_finished():
 		phase_index = active_phases.size() - 1
 	state = FieldState.READY
 	print("Feld", name, "ist bereit zur Ernte:", crop_type)
+	if GameState.has_method("on_field_ready"):
+		GameState.on_field_ready(self)
 	_update_visual()
 
 func _harvest():
@@ -256,6 +266,36 @@ func _harvest():
 	state = FieldState.EMPTY
 	_clear_crop_visual()
 	_update_visual()
+
+func request_harvest() -> bool:
+	if state != FieldState.READY:
+		return false
+	_harvest()
+	return true
+
+func harvest_by_farmer(farmer_name: String = "") -> bool:
+	if state != FieldState.READY:
+		return false
+	var name_to_use := farmer_name.strip_edges()
+	if name_to_use.is_empty():
+		name_to_use = assigned_farmer_name if not assigned_farmer_name.is_empty() else "Farmer"
+	print("%s erntet automatisch %s." % [name_to_use, name])
+	_harvest()
+	return true
+
+func set_assigned_farmer(farmer_id: int, farmer_name: String) -> void:
+	if farmer_id <= 0:
+		clear_assigned_farmer()
+		return
+	assigned_farmer_id = farmer_id
+	assigned_farmer_name = farmer_name.strip_edges()
+
+func clear_assigned_farmer() -> void:
+	assigned_farmer_id = 0
+	assigned_farmer_name = ""
+
+func get_assigned_farmer_id() -> int:
+	return assigned_farmer_id
 
 func _spawn_crop_visual(scene: PackedScene, scale: Vector3, offset: Vector3):
 	_clear_crop_visual()

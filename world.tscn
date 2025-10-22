@@ -46,6 +46,8 @@ compositor = SubResource("Compositor_fj7yv")
 [node name="FieldModel1" parent="WorldEnvironment/FieldModelContainer" instance=ExtResource("2_tlwt5")]
 transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -2.1484742, -0.002595842, -2.542006)
 
+[node name="BuildContainer" type="Node3D" parent="."]
+
 [node name="Camera3D" type="Camera3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 0.5718883, 0.8203316, 0, -0.8203316, 0.5718883, 0.07871914, 3.857207, 3.480303)
 current = true

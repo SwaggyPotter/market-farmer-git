@@ -21,6 +21,9 @@ const STORAGE_CATEGORY_ORDER := [
 	GameState.ITEM_CATEGORY_SEEDS,
 	GameState.ITEM_CATEGORY_HARVESTED,
 ]
+const FARMER_STATUS_IDLE := "idle"
+const FARMER_STATUS_ASSIGNED := "assigned"
+const PERSONNEL_SELECTOR_NONE_LABEL := "Kein Feld"
 
 @onready var menu: PopupMenu = $PlantMenu
 @onready var money_label: Label = $WalletPanel/MoneyLabel
@@ -45,6 +48,18 @@ const STORAGE_CATEGORY_ORDER := [
 @onready var research_entries_container: VBoxContainer = $ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer
 @onready var research_empty_label: Label = $ResearchPopup/MarginContainer/VBoxContainer/EmptyLabel
 @onready var research_close_button: Button = $ResearchPopup/MarginContainer/VBoxContainer/CloseButton
+@onready var personnel_button: Button = $WalletPanel/PersonnelButton
+@onready var personnel_popup: PopupPanel = $PersonnelPopup
+@onready var personnel_hire_button: Button = $PersonnelPopup/PersonnelMargin/PersonnelVBox/Controls/HireButton
+@onready var personnel_close_button: Button = $PersonnelPopup/PersonnelMargin/PersonnelVBox/PersonnelCloseButton
+@onready var personnel_list_container: VBoxContainer = $PersonnelPopup/PersonnelMargin/PersonnelVBox/PersonnelScroll/PersonnelList
+@onready var personnel_empty_label: Label = $PersonnelPopup/PersonnelMargin/PersonnelVBox/PersonnelEmptyLabel
+@onready var build_button: Button = $BuildButton
+@onready var build_popup: PopupPanel = $BuildPopup
+@onready var build_items_container: VBoxContainer = $BuildPopup/MarginContainer/VBoxContainer/ItemsScroll/ItemsContainer
+@onready var build_close_button: Button = $BuildPopup/MarginContainer/VBoxContainer/CloseButton
+@onready var build_empty_label: Label = $BuildPopup/MarginContainer/VBoxContainer/EmptyLabel
+@onready var build_info_label: Label = $BuildPopup/MarginContainer/VBoxContainer/InfoLabel
 var current_tile: Node = null
 var field_manager: Node = null
 var _latest_inventory: Dictionary = {}
@@ -53,9 +68,14 @@ var _market_item_buttons: Dictionary = {}
 var _market_item_stock_labels: Dictionary = {}
 var _latest_research_state: Dictionary = {}
 var _research_rows: Dictionary = {}
+var _latest_farmers: Array = []
+var _known_field_names: Array = []
+var _personnel_refreshing: bool = false
 var _menu_entries: Dictionary = {}
 var _menu_id_counter: int = 1
 var _current_menu_field_state: int = FIELD_STATE_UNKNOWN
+var _build_item_buttons: Dictionary = {}
+var _suppress_build_button_update: bool = false
 
 func _ready():
 	add_to_group("ui")      # damit Tiles dich finden
@@ -74,6 +94,16 @@ func _ready():
 		research_button.pressed.connect(_on_research_button_pressed)
 	if research_close_button:
 		research_close_button.pressed.connect(_on_research_close_pressed)
+	if personnel_button:
+		personnel_button.pressed.connect(_on_personnel_button_pressed)
+	if personnel_hire_button:
+		personnel_hire_button.pressed.connect(_on_personnel_hire_pressed)
+	if personnel_close_button:
+		personnel_close_button.pressed.connect(_on_personnel_close_pressed)
+	if build_button:
+		build_button.pressed.connect(_on_build_button_pressed)
+	if build_close_button:
+		build_close_button.pressed.connect(_on_build_close_pressed)
 	if field_manager == null:
 		call_deferred("_refresh_field_manager")
 	GameState.money_changed.connect(_on_money_changed)
@@ -82,8 +112,12 @@ func _ready():
 	GameState.market_log_updated.connect(_on_market_log_updated)
 	GameState.rent_cost_changed.connect(_on_rent_cost_changed)
 	GameState.research_state_changed.connect(_on_research_state_changed)
+	GameState.farmers_changed.connect(_on_farmers_changed)
+	GameState.fields_changed.connect(_on_fields_changed)
 	_latest_inventory = GameState.get_inventory()
 	_latest_supplies = GameState.get_supplies()
+	_latest_farmers = GameState.get_farmers()
+	_known_field_names = GameState.get_known_fields()
 	_on_money_changed(GameState.money)
 	_on_inventory_changed(_latest_inventory)
 	_setup_market_ui()
@@ -92,6 +126,13 @@ func _ready():
 	_on_market_log_updated(GameState.get_market_log())
 	_on_rent_cost_changed(GameState.get_hourly_rent_cost())
 	_on_research_state_changed(GameState.get_research_state())
+	_update_personnel_view()
+	if GameState.has_signal("build_mode_changed"):
+		GameState.build_mode_changed.connect(_on_build_mode_changed)
+	if GameState.has_signal("build_catalog_changed"):
+		GameState.build_catalog_changed.connect(_on_build_catalog_changed)
+	_refresh_build_menu()
+	_refresh_build_info_label()
 	if menu:
 		menu.clear()
 		var callback := Callable(self, "_on_menu_id")
@@ -362,6 +403,7 @@ func _on_money_changed(amount: int) -> void:
 	_update_market_money(amount)
 	_update_market_buttons_state(amount)
 	_update_research_rows()
+	_update_build_button_states()
 
 func _on_rent_cost_changed(hourly_cost: int) -> void:
 	if rent_label:
@@ -993,6 +1035,316 @@ func _on_research_state_changed(state: Dictionary) -> void:
 		_setup_research_ui()
 	else:
 		_update_research_rows()
+
+func _on_personnel_button_pressed() -> void:
+	if personnel_popup == null:
+		return
+	_update_personnel_view()
+	personnel_popup.popup_centered_ratio(0.75)
+
+func _on_personnel_close_pressed() -> void:
+	if personnel_popup:
+		personnel_popup.hide()
+
+func _on_personnel_hire_pressed() -> void:
+	if GameState.has_method("hire_farmer"):
+		GameState.hire_farmer()
+
+func _on_farmers_changed(farmers: Array) -> void:
+	_latest_farmers.clear()
+	for entry in farmers:
+		if entry is Dictionary:
+			_latest_farmers.append((entry as Dictionary).duplicate(true))
+	_update_personnel_view()
+
+func _on_fields_changed(field_names: Array) -> void:
+	_known_field_names.clear()
+	for entry in field_names:
+		if typeof(entry) == TYPE_STRING:
+			_known_field_names.append(String(entry))
+	_known_field_names.sort()
+	_update_personnel_view()
+
+func _update_personnel_view() -> void:
+	if personnel_list_container == null or personnel_empty_label == null:
+		return
+	_personnel_refreshing = true
+	_clear_personnel_list()
+	if _latest_farmers.is_empty():
+		personnel_empty_label.visible = true
+	else:
+		personnel_empty_label.visible = false
+		for farmer in _latest_farmers:
+			if farmer is Dictionary:
+				_add_personnel_row(farmer)
+	_personnel_refreshing = false
+
+func _clear_personnel_list() -> void:
+	if personnel_list_container == null:
+		return
+	for child in personnel_list_container.get_children():
+		if child:
+			child.queue_free()
+
+func _add_personnel_row(farmer: Dictionary) -> void:
+	if personnel_list_container == null:
+		return
+	var farmer_id := int(farmer.get("id", 0))
+	if farmer_id <= 0:
+		return
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 12)
+	var name_label := Label.new()
+	name_label.text = String(farmer.get("name", "Farmer %d" % farmer_id))
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(name_label)
+	var status_label := Label.new()
+	status_label.text = _format_farmer_status_text(farmer)
+	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(status_label)
+	var selector := OptionButton.new()
+	selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_build_field_selector(selector, String(farmer.get("field_name", "")))
+	var select_callable := Callable(self, "_on_personnel_field_selected").bind(farmer_id, selector)
+	if not selector.item_selected.is_connected(select_callable):
+		selector.item_selected.connect(select_callable)
+	row.add_child(selector)
+	var fire_button := Button.new()
+	fire_button.text = "Entlassen"
+	var fire_callable := Callable(self, "_on_personnel_fire_pressed").bind(farmer_id)
+	if not fire_button.pressed.is_connected(fire_callable):
+		fire_button.pressed.connect(fire_callable)
+	row.add_child(fire_button)
+	personnel_list_container.add_child(row)
+
+func _build_field_selector(selector: OptionButton, assigned_field: String) -> void:
+	if selector == null:
+		return
+	selector.clear()
+	selector.disabled = false
+	selector.tooltip_text = ""
+	selector.add_item(PERSONNEL_SELECTOR_NONE_LABEL)
+	selector.set_item_metadata(0, "")
+	var selected_index := 0
+	var sanitized := assigned_field.strip_edges()
+	for field_name in _known_field_names:
+		var display := String(field_name)
+		if display.is_empty():
+			continue
+		selector.add_item(display)
+		var index := selector.get_item_count() - 1
+		selector.set_item_metadata(index, display)
+		if display == sanitized:
+			selected_index = index
+	if selector.get_item_count() <= 1:
+		selector.disabled = _known_field_names.is_empty()
+		if selector.disabled:
+			selector.tooltip_text = "Kein Feld verfuegbar."
+		else:
+			selector.tooltip_text = ""
+	selector.select(selected_index)
+
+func _on_personnel_field_selected(index: int, farmer_id: int, selector: OptionButton) -> void:
+	if _personnel_refreshing:
+		return
+	if selector == null:
+		return
+	var metadata: Variant = selector.get_item_metadata(index)
+	var field_name := ""
+	match typeof(metadata):
+		TYPE_STRING:
+			field_name = String(metadata)
+		TYPE_NIL:
+			field_name = ""
+		_:
+			field_name = String(metadata)
+	if field_name.strip_edges().is_empty():
+		if GameState.has_method("unassign_farmer"):
+			GameState.unassign_farmer(farmer_id)
+	else:
+		if GameState.has_method("assign_farmer_to_field"):
+			GameState.assign_farmer_to_field(farmer_id, field_name)
+
+func _on_personnel_fire_pressed(farmer_id: int) -> void:
+	if GameState.has_method("fire_farmer"):
+		GameState.fire_farmer(farmer_id)
+
+func _format_farmer_status_text(farmer: Dictionary) -> String:
+	var status := String(farmer.get("status", FARMER_STATUS_IDLE))
+	match status:
+		FARMER_STATUS_ASSIGNED:
+			var field_name := String(farmer.get("field_name", ""))
+			if field_name.is_empty():
+				return "Eingesetzt"
+			return "Eingesetzt auf %s" % field_name
+		_:
+			return "Verfuegbar"
+
+func _on_build_button_pressed() -> void:
+	if build_popup == null:
+		return
+	if build_popup.visible:
+		build_popup.hide()
+	else:
+		_refresh_build_menu()
+		build_popup.popup()
+
+func _on_build_close_pressed() -> void:
+	if build_popup:
+		build_popup.hide()
+
+func _refresh_build_menu() -> void:
+	if build_items_container == null:
+		return
+	for child in build_items_container.get_children():
+		if child:
+			child.queue_free()
+	_build_item_buttons.clear()
+	if build_empty_label:
+		build_empty_label.visible = true
+	if not GameState.has_method("get_build_catalog"):
+		return
+	var catalog: Dictionary = GameState.get_build_catalog()
+	if catalog.is_empty():
+		return
+	var entries: Array = []
+	for build_id in catalog.keys():
+		var def: Dictionary = catalog[build_id]
+		var entry := {
+			"id": String(build_id),
+			"label": String(def.get("label", String(build_id))),
+			"category": String(def.get("category_label", def.get("category", ""))),
+			"cost": int(def.get("cost", 0)),
+			"description": String(def.get("description", "")),
+		}
+		entries.append(entry)
+	entries.sort_custom(Callable(self, "_sort_build_entries"))
+	var last_category := ""
+	if build_empty_label:
+		build_empty_label.visible = entries.is_empty()
+	for entry in entries:
+		var category := String(entry.get("category", ""))
+		if not category.is_empty() and category != last_category:
+			var separator := Label.new()
+			separator.text = category
+			separator.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			separator.add_theme_color_override("font_color", Color(0.2, 0.2, 0.2))
+			separator.add_theme_font_size_override("font_size", 18)
+			build_items_container.add_child(separator)
+			last_category = category
+		var label := String(entry.get("label", ""))
+		var cost := int(entry.get("cost", 0))
+		var button := Button.new()
+		button.toggle_mode = true
+		button.text = "%s (%d G)" % [label, cost]
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.focus_mode = Control.FOCUS_NONE
+		var description := String(entry.get("description", ""))
+		if not description.is_empty():
+			button.tooltip_text = description
+		button.toggled.connect(_on_build_item_toggled.bind(entry.get("id", "")))
+		build_items_container.add_child(button)
+		_build_item_buttons[entry.get("id", "")] = button
+	_update_build_button_states()
+
+func _sort_build_entries(a: Dictionary, b: Dictionary) -> bool:
+	var category_a := String(a.get("category", ""))
+	var category_b := String(b.get("category", ""))
+	if category_a != category_b:
+		return category_a < category_b
+	var label_a := String(a.get("label", ""))
+	var label_b := String(b.get("label", ""))
+	return label_a < label_b
+
+func _update_build_button_states() -> void:
+	if _build_item_buttons.is_empty():
+		return
+	var active_id := ""
+	if GameState.has_method("get_active_build_mode"):
+		active_id = String(GameState.get_active_build_mode())
+	var catalog: Dictionary = {}
+	if GameState.has_method("get_build_catalog"):
+		catalog = GameState.get_build_catalog()
+	for build_id in _build_item_buttons.keys():
+		var button: Button = _build_item_buttons.get(build_id, null)
+		if button == null:
+			continue
+		var def_variant: Variant = catalog.get(build_id, {})
+		var def: Dictionary = {}
+		if def_variant is Dictionary:
+			def = def_variant
+		var label := String(def.get("label", build_id))
+		var cost := int(def.get("cost", 0))
+		button.text = "%s (%d G)" % [label, cost]
+		var can_afford := true
+		if GameState.has_method("can_afford_build"):
+			can_afford = GameState.can_afford_build(build_id)
+		button.disabled = not can_afford
+		var description := String(def.get("description", ""))
+		if not description.is_empty():
+			button.tooltip_text = description
+		if _suppress_build_button_update:
+			continue
+		_suppress_build_button_update = true
+		button.button_pressed = (build_id == active_id)
+		_suppress_build_button_update = false
+	if build_popup and build_popup.visible:
+		_refresh_build_info_label()
+
+func _on_build_item_toggled(build_id: String, pressed: bool) -> void:
+	if _suppress_build_button_update:
+		return
+	if not GameState.has_method("get_active_build_mode"):
+		return
+	var active_id := String(GameState.get_active_build_mode())
+	if pressed:
+		if GameState.has_method("start_build_mode"):
+			if GameState.start_build_mode(build_id):
+				if build_popup and build_popup.visible:
+					build_popup.hide()
+			else:
+				var button: Button = _build_item_buttons.get(build_id, null)
+				if button:
+					_suppress_build_button_update = true
+					button.button_pressed = (build_id == active_id)
+					_suppress_build_button_update = false
+		return
+	# toggle off
+	if active_id == build_id and GameState.has_method("cancel_build_mode"):
+		GameState.cancel_build_mode()
+
+func _on_build_mode_changed(build_id: String) -> void:
+	_update_build_button_states()
+	_refresh_build_info_label()
+	if build_popup and build_popup.visible and build_id.is_empty():
+		_refresh_build_menu()
+
+func _on_build_catalog_changed(_catalog: Dictionary) -> void:
+	_refresh_build_menu()
+	_update_build_button_states()
+	_refresh_build_info_label()
+
+func _refresh_build_info_label() -> void:
+	if build_info_label == null:
+		return
+	if not GameState.has_method("get_active_build_mode"):
+		build_info_label.text = "Waehle eine Bauoption."
+		return
+	var active_id := String(GameState.get_active_build_mode())
+	if active_id.is_empty():
+		build_info_label.text = "Waehle eine Bauoption."
+		return
+	var def: Dictionary = {}
+	if GameState.has_method("get_build_definition"):
+		def = GameState.get_build_definition(active_id)
+	var label := String(def.get("label", active_id))
+	var cost := int(def.get("cost", 0))
+	var hint := "Linksklick platziert, Rechtsklick beendet."
+	if cost > 0:
+		build_info_label.text = "%s (%d G). %s" % [label, cost, hint]
+	else:
+		build_info_label.text = "%s. %s" % [label, hint]
 
 func _format_market_amount(amount: float, unit: String) -> String:
 	match unit:

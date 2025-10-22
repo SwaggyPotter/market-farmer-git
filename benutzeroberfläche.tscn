@@ -25,7 +25,7 @@ anchor_bottom = 0.0
 offset_left = 16.0
 offset_top = 16.0
 offset_right = 180.0
-offset_bottom = 260.0
+offset_bottom = 308.0
 
 [node name="MoneyLabel" type="Label" parent="WalletPanel"]
 anchor_right = 0.0
@@ -83,7 +83,7 @@ offset_bottom = 208.0
 size_flags_horizontal = 4
 text = "Forschung"
 
-[node name="MarketButton" type="Button" parent="WalletPanel"]
+[node name="PersonnelButton" type="Button" parent="WalletPanel"]
 anchor_right = 0.0
 anchor_bottom = 0.0
 offset_left = 12.0
@@ -91,7 +91,31 @@ offset_top = 216.0
 offset_right = 152.0
 offset_bottom = 252.0
 size_flags_horizontal = 4
+text = "Personal"
+
+[node name="MarketButton" type="Button" parent="WalletPanel"]
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 12.0
+offset_top = 260.0
+offset_right = 152.0
+offset_bottom = 296.0
+size_flags_horizontal = 4
 text = "Markt oeffnen"
+
+[node name="BuildButton" type="Button" parent="."]
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -72.0
+offset_top = -72.0
+offset_right = -16.0
+offset_bottom = -16.0
+custom_minimum_size = Vector2(48, 48)
+text = "+"
+theme_override_font_sizes/font_size = 32
+tooltip_text = "Baumenue oeffnen"
 
 [node name="StoragePopup" type="PopupPanel" parent="."]
 anchor_right = 0.0
@@ -261,6 +285,115 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
 [node name="CloseButton" type="Button" parent="ResearchPopup/MarginContainer/VBoxContainer"]
+text = "Schliessen"
+text_alignment = 1
+size_flags_horizontal = 4
+
+[node name="PersonnelPopup" type="PopupPanel" parent="."]
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 0.0
+custom_minimum_size = Vector2(960, 640)
+
+[node name="PersonnelMargin" type="MarginContainer" parent="PersonnelPopup"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = -16.0
+
+[node name="PersonnelVBox" type="VBoxContainer" parent="PersonnelPopup/PersonnelMargin"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="PersonnelTitleLabel" type="Label" parent="PersonnelPopup/PersonnelMargin/PersonnelVBox"]
+text = "Personal"
+horizontal_alignment = 1
+
+[node name="PersonnelInfoLabel" type="Label" parent="PersonnelPopup/PersonnelMargin/PersonnelVBox"]
+text = "Stelle Farmer ein und weise sie Feldern zu."
+horizontal_alignment = 1
+
+[node name="Controls" type="HBoxContainer" parent="PersonnelPopup/PersonnelMargin/PersonnelVBox"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="HireButton" type="Button" parent="PersonnelPopup/PersonnelMargin/PersonnelVBox/Controls"]
+text = "Farmer einstellen"
+size_flags_horizontal = 1
+
+[node name="PersonnelScroll" type="ScrollContainer" parent="PersonnelPopup/PersonnelMargin/PersonnelVBox"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="PersonnelList" type="VBoxContainer" parent="PersonnelPopup/PersonnelMargin/PersonnelVBox/PersonnelScroll"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="PersonnelEmptyLabel" type="Label" parent="PersonnelPopup/PersonnelMargin/PersonnelVBox"]
+text = "Noch kein Personal eingestellt."
+horizontal_alignment = 1
+
+[node name="PersonnelCloseButton" type="Button" parent="PersonnelPopup/PersonnelMargin/PersonnelVBox"]
+text = "Schliessen"
+text_alignment = 1
+size_flags_horizontal = 4
+
+[node name="BuildPopup" type="PopupPanel" parent="."]
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -320.0
+offset_top = -420.0
+offset_right = -16.0
+offset_bottom = -88.0
+custom_minimum_size = Vector2(280, 320)
+
+[node name="MarginContainer" type="MarginContainer" parent="BuildPopup"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = -12.0
+offset_bottom = -12.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="BuildPopup/MarginContainer"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="TitleLabel" type="Label" parent="BuildPopup/MarginContainer/VBoxContainer"]
+text = "Bauen"
+horizontal_alignment = 1
+
+[node name="InfoLabel" type="Label" parent="BuildPopup/MarginContainer/VBoxContainer"]
+text = "Waehle eine Bauoption."
+horizontal_alignment = 1
+
+[node name="ItemsScroll" type="ScrollContainer" parent="BuildPopup/MarginContainer/VBoxContainer"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="ItemsContainer" type="VBoxContainer" parent="BuildPopup/MarginContainer/VBoxContainer/ItemsScroll"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="EmptyLabel" type="Label" parent="BuildPopup/MarginContainer/VBoxContainer"]
+text = "Noch keine Bauoptionen verfuegbar."
+horizontal_alignment = 1
+visible = false
+
+[node name="CloseButton" type="Button" parent="BuildPopup/MarginContainer/VBoxContainer"]
 text = "Schliessen"
 text_alignment = 1
 size_flags_horizontal = 4
