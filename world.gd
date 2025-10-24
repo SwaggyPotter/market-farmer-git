@@ -10,6 +10,8 @@ extends Node3D
 @export var field_model_scene: PackedScene = preload("res://assets/Feld.glb")
 @export var field_model_container_path: NodePath = NodePath("WorldEnvironment/FieldModelContainer")
 @export var build_container_path: NodePath = NodePath("BuildContainer")
+@export var camera_path: NodePath = NodePath("Camera3D")
+@export var camera_move_speed: float = 8.0
 
 var _field_container: Node3D = null
 var _field_model_container: Node3D = null
@@ -24,6 +26,7 @@ var _preview_valid: bool = false
 var _preview_build_id: String = ""
 var _preview_base_color: Color = Color.WHITE
 var _build_index_counter: int = 0
+var _camera: Camera3D = null
 
 func _ready() -> void:
 	add_to_group("field_manager")
@@ -41,6 +44,10 @@ func _ready() -> void:
 		add_child(_build_container)
 	else:
 		_build_index_counter = max(_build_container.get_child_count(), 0)
+	_camera = get_node_or_null(camera_path) as Camera3D
+	if _camera == null:
+		push_warning("Camera not found at path: %s" % camera_path)
+	set_process(true)
 	if _field_container == null:
 		return
 	if grid_origin == Vector3.ZERO and _field_container.get_child_count() > 0:
@@ -59,6 +66,9 @@ func _ready() -> void:
 		active_build = String(GameState.get_active_build_mode())
 	if not active_build.is_empty():
 		_on_build_mode_changed(active_build)
+
+func _process(delta: float) -> void:
+	_update_camera_motion(delta)
 
 func _align_existing_fields() -> void:
 	if _field_container == null:
@@ -238,15 +248,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		match mouse_event.button_index:
 			MOUSE_BUTTON_LEFT:
 				_try_place_current_build()
-				event.accept()
+				var viewport := get_viewport()
+				if viewport and viewport.has_method("set_input_as_handled"):
+					viewport.set_input_as_handled()
 			MOUSE_BUTTON_RIGHT:
 				GameState.cancel_build_mode()
-				event.accept()
+				var viewport := get_viewport()
+				if viewport and viewport.has_method("set_input_as_handled"):
+					viewport.set_input_as_handled()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		var key_event := event as InputEventKey
 		if key_event.keycode == KEY_ESCAPE:
 			GameState.cancel_build_mode()
-			event.accept()
+			var viewport := get_viewport()
+			if viewport and viewport.has_method("set_input_as_handled"):
+				viewport.set_input_as_handled()
 
 func _on_build_mode_changed(build_id: String) -> void:
 	_current_build_id = build_id
@@ -285,6 +301,31 @@ func _clear_build_preview() -> void:
 	_build_preview_material = null
 	_preview_build_id = ""
 	_preview_valid = false
+
+func _update_camera_motion(delta: float) -> void:
+	if _camera == null:
+		return
+	var camera_transform := _camera.global_transform
+	var forward := -camera_transform.basis.z
+	forward.y = 0.0
+	if forward.length() > 0.0:
+		forward = forward.normalized()
+	var right := camera_transform.basis.x
+	right.y = 0.0
+	if right.length() > 0.0:
+		right = right.normalized()
+	var direction := Vector3.ZERO
+	if Input.is_key_pressed(KEY_W):
+		direction += forward
+	if Input.is_key_pressed(KEY_S):
+		direction -= forward
+	if Input.is_key_pressed(KEY_D):
+		direction += right
+	if Input.is_key_pressed(KEY_A):
+		direction -= right
+	if direction.length() > 0.0:
+		direction = direction.normalized()
+		_camera.global_position += direction * camera_move_speed * delta
 
 func _create_build_mesh(definition: Dictionary, is_preview: bool) -> MeshInstance3D:
 	var mesh_instance := MeshInstance3D.new()
