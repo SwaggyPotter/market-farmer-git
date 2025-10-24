@@ -24,6 +24,12 @@ const STORAGE_CATEGORY_ORDER := [
 const FARMER_STATUS_IDLE := "idle"
 const FARMER_STATUS_ASSIGNED := "assigned"
 const PERSONNEL_SELECTOR_NONE_LABEL := "Kein Feld"
+const BUILD_MENU_CATEGORY_ORDER := [
+	{"id": "decor", "label": "Dekorationen"},
+	{"id": "road", "label": "Strassen"},
+	{"id": "power", "label": "Stromerzeugung"},
+	{"id": "irrigation", "label": "Bewaesserung"},
+]
 
 @onready var menu: PopupMenu = $PlantMenu
 @onready var money_label: Label = $WalletPanel/MoneyLabel
@@ -56,9 +62,10 @@ const PERSONNEL_SELECTOR_NONE_LABEL := "Kein Feld"
 @onready var personnel_empty_label: Label = $PersonnelPopup/PersonnelMargin/PersonnelVBox/PersonnelEmptyLabel
 @onready var build_button: Button = $BuildButton
 @onready var build_popup: PopupPanel = $BuildPopup
-@onready var build_items_container: VBoxContainer = $BuildPopup/MarginContainer/VBoxContainer/ItemsScroll/ItemsContainer
-@onready var build_close_button: Button = $BuildPopup/MarginContainer/VBoxContainer/CloseButton
-@onready var build_empty_label: Label = $BuildPopup/MarginContainer/VBoxContainer/EmptyLabel
+@onready var build_category_container: VBoxContainer = $BuildPopup/MarginContainer/VBoxContainer/Content/CategorySection/CategoryButtons
+@onready var build_items_container: VBoxContainer = $BuildPopup/MarginContainer/VBoxContainer/Content/ItemsScroll/ItemsContainer
+@onready var build_close_button: Button = $BuildPopup/MarginContainer/VBoxContainer/Header/CloseButton
+@onready var build_empty_label: Label = $BuildPopup/MarginContainer/VBoxContainer/Content/ItemsScroll/ItemsContainer/EmptyLabel
 @onready var build_info_label: Label = $BuildPopup/MarginContainer/VBoxContainer/InfoLabel
 var current_tile: Node = null
 var field_manager: Node = null
@@ -75,7 +82,13 @@ var _menu_entries: Dictionary = {}
 var _menu_id_counter: int = 1
 var _current_menu_field_state: int = FIELD_STATE_UNKNOWN
 var _build_item_buttons: Dictionary = {}
+var _build_category_buttons: Dictionary = {}
+var _build_categories: Dictionary = {}
+var _build_id_to_category: Dictionary = {}
 var _suppress_build_button_update: bool = false
+var _suppress_category_update: bool = false
+var _active_build_category: String = ""
+var _build_category_button_group: ButtonGroup = ButtonGroup.new()
 
 func _ready():
 	add_to_group("ui")      # damit Tiles dich finden
@@ -1188,81 +1201,124 @@ func _on_build_button_pressed() -> void:
 		build_popup.hide()
 	else:
 		_refresh_build_menu()
-		build_popup.popup()
+		var viewport_rect := get_viewport_rect()
+		var popup_rect := Rect2i(
+			Vector2i(int(round(viewport_rect.position.x)), int(round(viewport_rect.position.y))),
+			Vector2i(int(round(viewport_rect.size.x)), int(round(viewport_rect.size.y)))
+		)
+		build_popup.popup(popup_rect)
 
 func _on_build_close_pressed() -> void:
 	if build_popup:
 		build_popup.hide()
 
 func _refresh_build_menu() -> void:
-	if build_items_container == null:
+	if build_items_container == null or build_category_container == null:
 		return
 	for child in build_items_container.get_children():
+		if child == build_empty_label:
+			continue
 		if child:
 			child.queue_free()
 	_build_item_buttons.clear()
 	if build_empty_label:
 		build_empty_label.visible = true
+		build_empty_label.text = "Noch keine Bauoptionen verfuegbar."
+	for child in build_category_container.get_children():
+		if child:
+			child.queue_free()
+	_build_category_buttons.clear()
+	_build_categories.clear()
+	_build_id_to_category.clear()
 	if not GameState.has_method("get_build_catalog"):
 		return
 	var catalog: Dictionary = GameState.get_build_catalog()
-	if catalog.is_empty():
-		return
-	var entries: Array = []
+	for cat_variant in BUILD_MENU_CATEGORY_ORDER:
+		var cat_def: Dictionary = cat_variant
+		var cat_id := String(cat_def.get("id", ""))
+		if cat_id.is_empty():
+			continue
+		var cat_label := String(cat_def.get("label", cat_id))
+		_build_categories[cat_id] = {
+			"id": cat_id,
+			"label": cat_label,
+			"entries": [],
+		}
 	for build_id in catalog.keys():
 		var def: Dictionary = catalog[build_id]
 		var entry := {
 			"id": String(build_id),
 			"label": String(def.get("label", String(build_id))),
-			"category": String(def.get("category_label", def.get("category", ""))),
+			"category_id": String(def.get("category", "")),
+			"category_label": String(def.get("category_label", "")),
 			"cost": int(def.get("cost", 0)),
 			"description": String(def.get("description", "")),
 		}
-		entries.append(entry)
-	entries.sort_custom(Callable(self, "_sort_build_entries"))
-	var last_category := ""
-	if build_empty_label:
-		build_empty_label.visible = entries.is_empty()
-	for entry in entries:
-		var category := String(entry.get("category", ""))
-		if not category.is_empty() and category != last_category:
-			var separator := Label.new()
-			separator.text = category
-			separator.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			separator.add_theme_color_override("font_color", Color(0.2, 0.2, 0.2))
-			separator.add_theme_font_size_override("font_size", 18)
-			build_items_container.add_child(separator)
-			last_category = category
-		var label := String(entry.get("label", ""))
-		var cost := int(entry.get("cost", 0))
-		var button := Button.new()
-		button.toggle_mode = true
-		button.text = "%s (%d G)" % [label, cost]
-		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.focus_mode = Control.FOCUS_NONE
-		var description := String(entry.get("description", ""))
-		if not description.is_empty():
-			button.tooltip_text = description
-		button.toggled.connect(_on_build_item_toggled.bind(entry.get("id", "")))
-		build_items_container.add_child(button)
-		_build_item_buttons[entry.get("id", "")] = button
+		var category_id := String(entry.get("category_id", ""))
+		if category_id.is_empty():
+			category_id = "other"
+		var category_label := String(entry.get("category_label", ""))
+		if category_label.is_empty():
+			category_label = category_id.capitalize()
+		if not _build_categories.has(category_id):
+			_build_categories[category_id] = {
+				"id": category_id,
+				"label": category_label,
+				"entries": [],
+			}
+		var category_dict: Dictionary = _build_categories.get(category_id, {})
+		var entry_list: Array = category_dict.get("entries", [])
+		entry_list.append(entry)
+		category_dict["entries"] = entry_list
+		var existing_label := String(category_dict.get("label", ""))
+		if existing_label.is_empty() or existing_label == category_id:
+			category_dict["label"] = category_label
+		_build_categories[category_id] = category_dict
+		_build_id_to_category[entry.get("id", "")] = category_id
+	for category_id in _build_categories.keys():
+		var data: Dictionary = _build_categories.get(category_id, {})
+		var entry_list: Array = data.get("entries", [])
+		entry_list.sort_custom(Callable(self, "_sort_build_entries"))
+		data["entries"] = entry_list
+		_build_categories[category_id] = data
+	_refresh_category_buttons()
+	var preferred_category := ""
+	if GameState.has_method("get_active_build_mode"):
+		var active_id := String(GameState.get_active_build_mode())
+		if not active_id.is_empty():
+			preferred_category = String(_build_id_to_category.get(active_id, ""))
+	if preferred_category.is_empty():
+		preferred_category = _active_build_category
+	if preferred_category.is_empty():
+		preferred_category = _find_first_category_with_entries()
+	if preferred_category.is_empty():
+		preferred_category = _first_category_id()
+	if preferred_category.is_empty():
+		return
+	_set_active_build_category(preferred_category, true)
 	_update_build_button_states()
 
 func _sort_build_entries(a: Dictionary, b: Dictionary) -> bool:
-	var category_a := String(a.get("category", ""))
-	var category_b := String(b.get("category", ""))
-	if category_a != category_b:
-		return category_a < category_b
 	var label_a := String(a.get("label", ""))
 	var label_b := String(b.get("label", ""))
-	return label_a < label_b
+	if label_a != label_b:
+		return label_a < label_b
+	var id_a := String(a.get("id", ""))
+	var id_b := String(b.get("id", ""))
+	return id_a < id_b
 
 func _update_build_button_states() -> void:
-	if _build_item_buttons.is_empty():
-		return
 	var active_id := ""
 	if GameState.has_method("get_active_build_mode"):
 		active_id = String(GameState.get_active_build_mode())
+	if not active_id.is_empty():
+		var target_category := String(_build_id_to_category.get(active_id, ""))
+		if not target_category.is_empty() and target_category != _active_build_category:
+			_set_active_build_category(target_category, true)
+	if _build_item_buttons.is_empty():
+		if build_popup and build_popup.visible:
+			_refresh_build_info_label()
+		return
 	var catalog: Dictionary = {}
 	if GameState.has_method("get_build_catalog"):
 		catalog = GameState.get_build_catalog()
@@ -1291,6 +1347,160 @@ func _update_build_button_states() -> void:
 		_suppress_build_button_update = false
 	if build_popup and build_popup.visible:
 		_refresh_build_info_label()
+
+func _refresh_category_buttons() -> void:
+	if build_category_container == null:
+		return
+	for child in build_category_container.get_children():
+		if child:
+			child.queue_free()
+	_build_category_buttons.clear()
+	_build_category_button_group = ButtonGroup.new()
+	var ordered_categories: Array = []
+	for cat_variant in BUILD_MENU_CATEGORY_ORDER:
+		var base_def: Dictionary = cat_variant
+		var cat_id := String(base_def.get("id", ""))
+		if cat_id.is_empty():
+			continue
+		if not _build_categories.has(cat_id):
+			var placeholder := {
+				"id": cat_id,
+				"label": String(base_def.get("label", cat_id)),
+				"entries": [],
+			}
+			_build_categories[cat_id] = placeholder
+		ordered_categories.append(_build_categories[cat_id])
+	for cat_id in _build_categories.keys():
+		var found := false
+		for category_variant in ordered_categories:
+			var category_dict: Dictionary = category_variant
+			if String(category_dict.get("id", "")) == cat_id:
+				found = true
+				break
+		if not found:
+			ordered_categories.append(_build_categories[cat_id])
+	for category_variant in ordered_categories:
+		var category_dict: Dictionary = category_variant
+		var cat_id := String(category_dict.get("id", ""))
+		if cat_id.is_empty():
+			continue
+		var button := Button.new()
+		button.toggle_mode = true
+		button.button_group = _build_category_button_group
+		button.focus_mode = Control.FOCUS_NONE
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.text = String(category_dict.get("label", cat_id))
+		button.toggled.connect(_on_build_category_toggled.bind(cat_id))
+		build_category_container.add_child(button)
+		_build_category_buttons[cat_id] = button
+	_update_category_button_states()
+
+func _set_active_build_category(category_id: String, force: bool = false) -> void:
+	if category_id.is_empty():
+		return
+	if not _build_categories.has(category_id):
+		return
+	if not force and _active_build_category == category_id:
+		return
+	_active_build_category = category_id
+	_populate_build_items_for_category(category_id)
+	_update_category_button_states()
+
+func _populate_build_items_for_category(category_id: String) -> void:
+	if build_items_container == null:
+		return
+	if build_empty_label and build_empty_label.get_parent() == build_items_container:
+		build_items_container.remove_child(build_empty_label)
+	for child in build_items_container.get_children():
+		if child:
+			child.queue_free()
+	_build_item_buttons.clear()
+	var entries: Array = []
+	var category_variant: Variant = _build_categories.get(category_id, {})
+	var category_label := _get_category_label(category_id)
+	if category_variant is Dictionary:
+		var category_dict: Dictionary = category_variant
+		entries = category_dict.get("entries", [])
+	if build_empty_label:
+		if category_label.is_empty():
+			build_empty_label.text = "Noch keine Bauoptionen verfuegbar."
+		else:
+			build_empty_label.text = "Keine Bauoptionen in %s." % category_label
+	for entry_variant in entries:
+		var entry: Dictionary = entry_variant
+		var label := String(entry.get("label", ""))
+		var cost := int(entry.get("cost", 0))
+		var button := Button.new()
+		button.toggle_mode = true
+		button.text = "%s (%d G)" % [label, cost]
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.focus_mode = Control.FOCUS_NONE
+		var description := String(entry.get("description", ""))
+		if not description.is_empty():
+			button.tooltip_text = description
+		var entry_id := String(entry.get("id", ""))
+		button.toggled.connect(_on_build_item_toggled.bind(entry_id))
+		build_items_container.add_child(button)
+		_build_item_buttons[entry_id] = button
+	if build_empty_label:
+		build_empty_label.visible = entries.is_empty()
+		build_items_container.add_child(build_empty_label)
+
+func _update_category_button_states() -> void:
+	if _build_category_buttons.is_empty():
+		return
+	_suppress_category_update = true
+	for cat_id in _build_category_buttons.keys():
+		var button: Button = _build_category_buttons.get(cat_id, null)
+		if button:
+			button.button_pressed = (cat_id == _active_build_category)
+	_suppress_category_update = false
+
+func _get_category_label(category_id: String) -> String:
+	var category_variant: Variant = _build_categories.get(category_id, {})
+	if category_variant is Dictionary:
+		var category_dict: Dictionary = category_variant
+		return String(category_dict.get("label", category_id))
+	return category_id
+
+func _find_first_category_with_entries() -> String:
+	for cat_variant in BUILD_MENU_CATEGORY_ORDER:
+		var base_def: Dictionary = cat_variant
+		var cat_id := String(base_def.get("id", ""))
+		if cat_id.is_empty():
+			continue
+		var category_variant: Variant = _build_categories.get(cat_id, {})
+		if category_variant is Dictionary:
+			var entries: Array = category_variant.get("entries", [])
+			if not entries.is_empty():
+				return cat_id
+	for cat_id in _build_categories.keys():
+		var category_variant: Variant = _build_categories.get(cat_id, {})
+		if category_variant is Dictionary:
+			var entries: Array = category_variant.get("entries", [])
+			if not entries.is_empty():
+				return String(cat_id)
+	return ""
+
+func _first_category_id() -> String:
+	for cat_variant in BUILD_MENU_CATEGORY_ORDER:
+		var base_def: Dictionary = cat_variant
+		var cat_id := String(base_def.get("id", ""))
+		if cat_id.is_empty():
+			continue
+		if _build_categories.has(cat_id):
+			return cat_id
+	for cat_id in _build_categories.keys():
+		return String(cat_id)
+	return ""
+
+func _on_build_category_toggled(category_id: String, pressed: bool) -> void:
+	if _suppress_category_update:
+		return
+	if not pressed:
+		return
+	_set_active_build_category(category_id)
+	_update_build_button_states()
 
 func _on_build_item_toggled(build_id: String, pressed: bool) -> void:
 	if _suppress_build_button_update:

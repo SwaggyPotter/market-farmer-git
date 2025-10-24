@@ -347,15 +347,14 @@ text_alignment = 1
 size_flags_horizontal = 4
 
 [node name="BuildPopup" type="PopupPanel" parent="."]
-anchor_left = 1.0
-anchor_top = 1.0
+anchor_left = 0.0
+anchor_top = 0.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -320.0
-offset_top = -420.0
-offset_right = -16.0
-offset_bottom = -88.0
-custom_minimum_size = Vector2(280, 320)
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 0.0
 
 [node name="MarginContainer" type="MarginContainer" parent="BuildPopup"]
 anchor_right = 1.0
@@ -370,30 +369,51 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 16
 
-[node name="TitleLabel" type="Label" parent="BuildPopup/MarginContainer/VBoxContainer"]
+[node name="Header" type="HBoxContainer" parent="BuildPopup/MarginContainer/VBoxContainer"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="BuildPopup/MarginContainer/VBoxContainer/Header"]
 text = "Bauen"
-horizontal_alignment = 1
+size_flags_horizontal = 3
+
+[node name="CloseButton" type="Button" parent="BuildPopup/MarginContainer/VBoxContainer/Header"]
+text = "Schliessen"
+text_alignment = 1
+size_flags_horizontal = 1
 
 [node name="InfoLabel" type="Label" parent="BuildPopup/MarginContainer/VBoxContainer"]
 text = "Waehle eine Bauoption."
-horizontal_alignment = 1
 
-[node name="ItemsScroll" type="ScrollContainer" parent="BuildPopup/MarginContainer/VBoxContainer"]
+[node name="Content" type="HBoxContainer" parent="BuildPopup/MarginContainer/VBoxContainer"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 24
+
+[node name="CategorySection" type="VBoxContainer" parent="BuildPopup/MarginContainer/VBoxContainer/Content"]
+size_flags_horizontal = 1
+size_flags_vertical = 3
+custom_minimum_size = Vector2(200, 0)
+theme_override_constants/separation = 8
+
+[node name="CategoryLabel" type="Label" parent="BuildPopup/MarginContainer/VBoxContainer/Content/CategorySection"]
+text = "Kategorien"
+
+[node name="CategoryButtons" type="VBoxContainer" parent="BuildPopup/MarginContainer/VBoxContainer/Content/CategorySection"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="ItemsScroll" type="ScrollContainer" parent="BuildPopup/MarginContainer/VBoxContainer/Content"]
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="ItemsContainer" type="VBoxContainer" parent="BuildPopup/MarginContainer/VBoxContainer/ItemsScroll"]
+[node name="ItemsContainer" type="VBoxContainer" parent="BuildPopup/MarginContainer/VBoxContainer/Content/ItemsScroll"]
 size_flags_horizontal = 3
-theme_override_constants/separation = 6
+theme_override_constants/separation = 8
 
-[node name="EmptyLabel" type="Label" parent="BuildPopup/MarginContainer/VBoxContainer"]
+[node name="EmptyLabel" type="Label" parent="BuildPopup/MarginContainer/VBoxContainer/Content/ItemsScroll/ItemsContainer"]
 text = "Noch keine Bauoptionen verfuegbar."
-horizontal_alignment = 1
 visible = false
-
-[node name="CloseButton" type="Button" parent="BuildPopup/MarginContainer/VBoxContainer"]
-text = "Schliessen"
-text_alignment = 1
-size_flags_horizontal = 4
