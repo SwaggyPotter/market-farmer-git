@@ -1494,7 +1494,7 @@ func _first_category_id() -> String:
 		return String(cat_id)
 	return ""
 
-func _on_build_category_toggled(category_id: String, pressed: bool) -> void:
+func _on_build_category_toggled(pressed: bool, category_id: String) -> void:
 	if _suppress_category_update:
 		return
 	if not pressed:
@@ -1502,7 +1502,7 @@ func _on_build_category_toggled(category_id: String, pressed: bool) -> void:
 	_set_active_build_category(category_id)
 	_update_build_button_states()
 
-func _on_build_item_toggled(build_id: String, pressed: bool) -> void:
+func _on_build_item_toggled(pressed: bool, build_id: String) -> void:
 	if _suppress_build_button_update:
 		return
 	if not GameState.has_method("get_active_build_mode"):
