@@ -22,6 +22,7 @@ const CROP_SCALE := {
 const CROP_OFFSET := {
 	"wheat": Vector3(0, 0, 0),
 }
+const GROWTH_PROGRESS_REPORT_INTERVAL := 0.25
 
 enum FieldState { EMPTY, GROWING, READY }
 
@@ -40,12 +41,17 @@ var fertilizer_yield_progress: float = 0.0
 var fertilizer_applications: Dictionary = {}
 var assigned_farmer_id: int = 0
 var assigned_farmer_name: String = ""
+var total_growth_duration: float = 0.0
+var _growth_report_accumulator: float = 0.0
+var _last_reported_progress: float = -1.0
+var _last_reported_time_left: float = -1.0
 
 func _ready():
 	body.input_event.connect(_on_input_event)
 	if GameState.has_method("register_field"):
 		GameState.register_field(self)
 	_update_visual()
+	set_process(false)
 
 func _exit_tree() -> void:
 	if GameState.has_method("unregister_field"):
@@ -214,6 +220,14 @@ func start_growth(crop_id: String, duration: float):
 	active_phases = _get_crop_phases(crop_type)
 	phase_durations = _compute_phase_durations(final_duration, active_phases)
 	phase_index = -1
+	total_growth_duration = final_duration
+	_growth_report_accumulator = 0.0
+	_last_reported_progress = -1.0
+	_last_reported_time_left = -1.0
+	if final_duration > 0.0:
+		set_process(true)
+	else:
+		set_process(false)
 	print("Aussaat auf", name, ":", crop_type, "(%.2f s)" % final_duration)
 	if active_phases.is_empty():
 		var fallback_scene := _get_default_scene(crop_type)
@@ -228,6 +242,7 @@ func start_growth(crop_id: String, duration: float):
 		_apply_growth_phase(phase_index)
 		_start_phase_timer(phase_index)
 	_update_visual()
+	_report_growth_progress(true)
 
 func _on_growth_finished():
 	if state == FieldState.READY:
@@ -241,6 +256,8 @@ func _on_growth_finished():
 	if GameState.has_method("on_field_ready"):
 		GameState.on_field_ready(self)
 	_update_visual()
+	set_process(false)
+	_report_growth_progress(true)
 
 func _harvest():
 	var base_amount := 0.0
@@ -264,8 +281,14 @@ func _harvest():
 	phase_index = -1
 	crop_type = ""
 	state = FieldState.EMPTY
+	set_process(false)
+	total_growth_duration = 0.0
+	_growth_report_accumulator = 0.0
+	_last_reported_progress = -1.0
+	_last_reported_time_left = -1.0
 	_clear_crop_visual()
 	_update_visual()
+	_report_growth_progress(true)
 
 func request_harvest() -> bool:
 	if state != FieldState.READY:
@@ -417,3 +440,57 @@ func _on_growth_timer_timeout():
 		_on_growth_finished()
 	else:
 		_advance_growth_phase()
+
+func _process(delta: float) -> void:
+	if state != FieldState.GROWING:
+		set_process(false)
+		return
+	_growth_report_accumulator += delta
+	if _growth_report_accumulator >= GROWTH_PROGRESS_REPORT_INTERVAL:
+		_growth_report_accumulator = 0.0
+		_report_growth_progress()
+
+func _compute_growth_time_left() -> float:
+	var remaining := 0.0
+	if growth_timer:
+		remaining = max(growth_timer.time_left, 0.0)
+	if active_phases.is_empty():
+		return remaining
+	if phase_durations.is_empty():
+		return remaining
+	var current_index := phase_index
+	if current_index < 0:
+		current_index = 0
+	if current_index >= phase_durations.size():
+		current_index = phase_durations.size() - 1
+	for i in range(current_index + 1, phase_durations.size()):
+		remaining += max(phase_durations[i], 0.0)
+	return max(remaining, 0.0)
+
+func _compute_growth_progress(time_left: float) -> float:
+	if total_growth_duration <= 0.0:
+		return 1.0 if state == FieldState.READY else 0.0
+	return clamp(1.0 - (time_left / total_growth_duration), 0.0, 1.0)
+
+func _report_growth_progress(force: bool = false) -> void:
+	if not GameState.has_method("update_field_growth_info"):
+		return
+	var state_value: int = state
+	var time_left: float = 0.0
+	var progress: float = 0.0
+	match state_value:
+		FieldState.GROWING:
+			time_left = _compute_growth_time_left()
+			progress = _compute_growth_progress(time_left)
+		FieldState.READY:
+			time_left = 0.0
+			progress = 1.0
+		_:
+			time_left = 0.0
+			progress = 0.0
+	if not force:
+		if abs(progress - _last_reported_progress) < 0.01 and abs(time_left - _last_reported_time_left) < 0.1:
+			return
+	GameState.update_field_growth_info(self, state_value, progress, time_left, total_growth_duration)
+	_last_reported_progress = progress
+	_last_reported_time_left = time_left

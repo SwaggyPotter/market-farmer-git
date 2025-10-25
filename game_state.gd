@@ -11,6 +11,7 @@ signal fields_changed(field_names: Array)
 signal build_catalog_changed(catalog: Dictionary)
 signal build_mode_changed(build_id: String)
 signal build_constructed(build_id: String, data: Dictionary)
+signal field_growth_changed(field_name: String, info: Dictionary)
 
 const START_MONEY := 100
 const ITEM_DISPLAY_NAMES := {
@@ -245,6 +246,7 @@ var _field_nodes: Dictionary = {}
 var _known_field_names: Array[String] = []
 var _pending_auto_harvest: Dictionary = {}
 var _build_catalog: Dictionary = BUILD_CATALOG.duplicate(true)
+var _field_growth_info: Dictionary = {}
 var _active_build_mode: String = ""
 var _built_structures: Array = []
 
@@ -858,6 +860,14 @@ func get_farmers() -> Array:
 func get_known_fields() -> Array:
 	return _known_field_names.duplicate()
 
+func get_field_growth_info() -> Dictionary:
+	var snapshot: Dictionary = {}
+	for key in _field_growth_info.keys():
+		var info_variant: Variant = _field_growth_info[key]
+		if info_variant is Dictionary:
+			snapshot[key] = (info_variant as Dictionary).duplicate(true)
+	return snapshot
+
 func hire_farmer(name: String = "") -> Dictionary:
 	var trimmed_name := name.strip_edges()
 	var new_id := _farmer_id_counter
@@ -947,6 +957,30 @@ func register_field(field_node: Node) -> void:
 	_ensure_field_assignment_entry(field_name)
 	_apply_assignment_to_field(field_name)
 
+func update_field_growth_info(field_node: Node, state_value: int, progress: float, time_left: float, total_duration: float, crop_id: String = "") -> void:
+	if field_node == null:
+		return
+	var field_name := _resolve_field_name(field_node)
+	if field_name.is_empty():
+		return
+	if state_value == FIELD_STATE_EMPTY:
+		if _field_growth_info.erase(field_name):
+			field_growth_changed.emit(field_name, {})
+		return
+	var clamped_progress := clamp(progress, 0.0, 1.0)
+	var safe_time_left := max(time_left, 0.0)
+	var safe_total := max(total_duration, 0.0)
+	var info := {
+		"state": state_value,
+		"progress": clamped_progress,
+		"time_left": safe_time_left,
+		"total": safe_total,
+	}
+	if not crop_id.is_empty():
+		info["crop_id"] = crop_id
+	_field_growth_info[field_name] = info
+	field_growth_changed.emit(field_name, info.duplicate(true))
+
 func unregister_field(field_node: Node) -> void:
 	if field_node == null:
 		return
@@ -965,6 +999,9 @@ func unregister_field(field_node: Node) -> void:
 				assignment_removed = true
 		_field_assignments.erase(field_name)
 	_pending_auto_harvest.erase(field_name)
+	if _field_growth_info.has(field_name):
+		_field_growth_info.erase(field_name)
+		field_growth_changed.emit(field_name, {})
 	_remove_known_field_name(field_name)
 	if assignment_removed:
 		_emit_farmers_changed()
