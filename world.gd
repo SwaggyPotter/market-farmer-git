@@ -12,6 +12,9 @@ extends Node3D
 @export var build_container_path: NodePath = NodePath("BuildContainer")
 @export var camera_path: NodePath = NodePath("Camera3D")
 @export var camera_move_speed: float = 8.0
+@export var camera_zoom_speed: float = 10.0
+@export var camera_zoom_step: float = 2.5
+@export var camera_zoom_limits: Vector2 = Vector2(6.0, 30.0)
 
 var _field_container: Node3D = null
 var _field_model_container: Node3D = null
@@ -48,6 +51,7 @@ func _ready() -> void:
 	if _camera == null:
 		push_warning("Camera not found at path: %s" % camera_path)
 	set_process(true)
+	set_process_input(true)
 	if _field_container == null:
 		return
 	if grid_origin == Vector3.ZERO and _field_container.get_child_count() > 0:
@@ -69,6 +73,17 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_update_camera_motion(delta)
+
+func _input(event: InputEvent) -> void:
+	if _camera == null:
+		return
+	if event is InputEventMouseButton and event.pressed:
+		var mouse_event := event as InputEventMouseButton
+		match mouse_event.button_index:
+			MOUSE_BUTTON_WHEEL_UP:
+				_adjust_camera_zoom(-camera_zoom_step)
+			MOUSE_BUTTON_WHEEL_DOWN:
+				_adjust_camera_zoom(camera_zoom_step)
 
 func _align_existing_fields() -> void:
 	if _field_container == null:
@@ -305,8 +320,8 @@ func _clear_build_preview() -> void:
 func _update_camera_motion(delta: float) -> void:
 	if _camera == null:
 		return
-	var camera_transform := _camera.global_transform
-	var forward := -camera_transform.basis.z
+	var camera_transform: Transform3D = _camera.global_transform
+	var forward: Vector3 = -camera_transform.basis.z
 	forward.y = 0.0
 	if forward.length() > 0.0:
 		forward = forward.normalized()
@@ -326,6 +341,41 @@ func _update_camera_motion(delta: float) -> void:
 	if direction.length() > 0.0:
 		direction = direction.normalized()
 		_camera.global_position += direction * camera_move_speed * delta
+	var zoom_axis: float = 0.0
+	if Input.is_key_pressed(KEY_Q):
+		zoom_axis -= 1.0
+	if Input.is_key_pressed(KEY_E):
+		zoom_axis += 1.0
+	if zoom_axis != 0.0:
+		_adjust_camera_zoom(zoom_axis * camera_zoom_speed * delta)
+
+func _adjust_camera_zoom(amount: float) -> void:
+	if _camera == null or amount == 0.0:
+		return
+	var min_distance: float = float(min(camera_zoom_limits.x, camera_zoom_limits.y))
+	var max_distance: float = float(max(camera_zoom_limits.x, camera_zoom_limits.y))
+	min_distance = max(min_distance, 0.1)
+	if max_distance <= min_distance:
+		max_distance = min_distance + 0.1
+	var transform: Transform3D = _camera.global_transform
+	var forward: Vector3 = -transform.basis.z
+	var forward_length: float = forward.length()
+	if forward_length <= 0.0001:
+		return
+	forward /= forward_length
+	if abs(forward.y) <= 0.0001:
+		return
+	var origin: Vector3 = transform.origin
+	var t: float = -origin.y / forward.y
+	if t <= 0.0:
+		return
+	var focus: Vector3 = origin + forward * t
+	var current_distance: float = origin.distance_to(focus)
+	var target_distance: float = clamp(current_distance + amount, min_distance, max_distance)
+	if is_equal_approx(target_distance, current_distance):
+		return
+	var new_origin: Vector3 = focus - forward * target_distance
+	_camera.global_position = new_origin
 
 func _create_build_mesh(definition: Dictionary, is_preview: bool) -> MeshInstance3D:
 	var mesh_instance := MeshInstance3D.new()
