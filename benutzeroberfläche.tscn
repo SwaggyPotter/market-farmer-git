@@ -53,7 +53,7 @@ text = "Mietkosten: 0 G/Stunde"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="BuyFieldButton" type="Button" parent="WalletPanel"]
+[node name="StorageButton" type="Button" parent="WalletPanel"]
 anchor_right = 0.0
 anchor_bottom = 0.0
 offset_left = 12.0
@@ -61,9 +61,9 @@ offset_top = 84.0
 offset_right = 152.0
 offset_bottom = 120.0
 size_flags_horizontal = 4
-text = "Feld kaufen (10)"
+text = "Lager oeffnen"
 
-[node name="StorageButton" type="Button" parent="WalletPanel"]
+[node name="ResearchButton" type="Button" parent="WalletPanel"]
 anchor_right = 0.0
 anchor_bottom = 0.0
 offset_left = 12.0
@@ -71,9 +71,9 @@ offset_top = 128.0
 offset_right = 152.0
 offset_bottom = 164.0
 size_flags_horizontal = 4
-text = "Lager oeffnen"
+text = "Forschung"
 
-[node name="ResearchButton" type="Button" parent="WalletPanel"]
+[node name="PersonnelButton" type="Button" parent="WalletPanel"]
 anchor_right = 0.0
 anchor_bottom = 0.0
 offset_left = 12.0
@@ -81,25 +81,15 @@ offset_top = 172.0
 offset_right = 152.0
 offset_bottom = 208.0
 size_flags_horizontal = 4
-text = "Forschung"
-
-[node name="PersonnelButton" type="Button" parent="WalletPanel"]
-anchor_right = 0.0
-anchor_bottom = 0.0
-offset_left = 12.0
-offset_top = 216.0
-offset_right = 152.0
-offset_bottom = 252.0
-size_flags_horizontal = 4
 text = "Personal"
 
 [node name="MarketButton" type="Button" parent="WalletPanel"]
 anchor_right = 0.0
 anchor_bottom = 0.0
 offset_left = 12.0
-offset_top = 260.0
+offset_top = 216.0
 offset_right = 152.0
-offset_bottom = 296.0
+offset_bottom = 252.0
 size_flags_horizontal = 4
 text = "Markt oeffnen"
 

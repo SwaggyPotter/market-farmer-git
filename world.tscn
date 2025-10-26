@@ -5,11 +5,6 @@
 [ext_resource type="PackedScene" uid="uid://bb8uta68hnvrg" path="res://assets/Feld.glb" id="2_tlwt5"]
 [ext_resource type="Script" uid="uid://dpy16xpk6pk25" path="res://world.gd" id="3_mom4b"]
 
-[sub_resource type="PlaneMesh" id="PlaneMesh_gv5m4"]
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_j13wd"]
-albedo_color = Color(0.0022676405, 0.0006281972, 0.00011545606, 0)
-
 [sub_resource type="Environment" id="Environment_gv5m4"]
 background_mode = 2
 ambient_light_energy = 0.84
@@ -31,20 +26,12 @@ script = ExtResource("3_mom4b")
 
 [node name="FieldContainer" type="Node3D" parent="."]
 
-[node name="Field1" parent="FieldContainer" instance=ExtResource("1_f3sb7")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.1498415, -0.0025024116, -2.556626)
-mesh = SubResource("PlaneMesh_gv5m4")
-surface_material_override/0 = SubResource("StandardMaterial3D_j13wd")
-
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_gv5m4")
 camera_attributes = SubResource("CameraAttributesPractical_f3sb7")
 compositor = SubResource("Compositor_fj7yv")
 
 [node name="FieldModelContainer" type="Node3D" parent="WorldEnvironment"]
-
-[node name="FieldModel1" parent="WorldEnvironment/FieldModelContainer" instance=ExtResource("2_tlwt5")]
-transform = Transform3D(0.14598325, 0, 0, 0, 0.1020821, 0, 0, 0, 0.17924231, -2.1484742, -0.002595842, -2.542006)
 
 [node name="BuildContainer" type="Node3D" parent="."]
 

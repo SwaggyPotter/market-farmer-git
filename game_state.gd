@@ -76,7 +76,7 @@ const ITEM_UNITS := {
 const BUILD_CATALOG := {
 	"field_basic": {
 		"label": "Ackerfeld",
-		"description": "Erzeugt zusaetzliche Flaeche fuer den Anbau.",
+		"description": "Erzeugt zusaetzliche Flaeche fuer den Anbau. Das erste Feld ist kostenlos.",
 		"cost": 10,
 		"category": "field",
 		"category_label": "Felder",
@@ -250,6 +250,7 @@ var _storage: Dictionary = {}
 var _supplies: Dictionary = {}
 var _market_log: Array = []
 var _paying_field_count: int = 0
+var _total_field_count: int = 0
 var _rent_timer: Timer = null
 var _research_state: Dictionary = {}
 var _farmers: Array = []
@@ -339,6 +340,9 @@ func can_afford_build(build_id: String) -> bool:
 		return false
 	var definition: Dictionary = definition_variant
 	var cost := int(definition.get("cost", 0))
+	var build_type := String(definition.get("build_type", ""))
+	if build_type == "field" and _total_field_count <= 0:
+		return true
 	return _money >= cost
 
 func get_active_build_mode() -> String:
@@ -742,7 +746,9 @@ func _resolve_display_name(item_id: String) -> String:
 	return item_id.capitalize()
 
 func update_field_count(total_fields: int) -> void:
-	var payable: int = max(total_fields - 1, 0)
+	var clamped_total: int = int(max(total_fields, 0))
+	_total_field_count = clamped_total
+	var payable: int = int(max(clamped_total - 1, 0))
 	if payable == _paying_field_count:
 		return
 	_paying_field_count = payable

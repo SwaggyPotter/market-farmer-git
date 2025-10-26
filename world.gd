@@ -16,9 +16,18 @@ extends Node3D
 @export var camera_zoom_step: float = 2.5
 @export var camera_zoom_limits: Vector2 = Vector2(6.0, 30.0)
 
+const DEFAULT_FIELD_MODEL_RELATIVE := Transform3D(
+	Basis(
+		Vector3(0.14598325, 0.0, 0.0),
+		Vector3(0.0, 0.1020821, 0.0),
+		Vector3(0.0, 0.0, 0.17924231)
+	),
+	Vector3(0.0013673, -0.00009343, 0.01462)
+)
+
 var _field_container: Node3D = null
 var _field_model_container: Node3D = null
-var _model_relative: Transform3D = Transform3D.IDENTITY
+var _model_relative: Transform3D = DEFAULT_FIELD_MODEL_RELATIVE
 var _build_container: Node3D = null
 var _current_build_id: String = ""
 var _build_preview: MeshInstance3D = null
@@ -123,13 +132,14 @@ func _compute_slot_position(index: int) -> Vector3:
 	return grid_origin + offset
 
 func _update_model_reference() -> void:
-	_model_relative = Transform3D.IDENTITY
+	_model_relative = DEFAULT_FIELD_MODEL_RELATIVE
 	if _field_container == null or _field_model_container == null:
 		return
 	var reference_field := _get_field_at(0)
 	var reference_model := _get_model_at(0)
 	if reference_field and reference_model:
-		_model_relative = reference_field.global_transform.affine_inverse() * reference_model.global_transform
+		var relative := reference_field.global_transform.affine_inverse() * reference_model.global_transform
+		_model_relative = relative
 
 func _align_existing_models() -> void:
 	if _field_container == null or _field_model_container == null:
@@ -250,7 +260,11 @@ func _physics_process(_delta: float) -> void:
 		return
 	var snapped: Vector3 = _snap_build_position(ground_point, definition)
 	var blocked: bool = _is_position_blocked(snapped, definition)
+	var build_type := String(definition.get("build_type", ""))
+	var free_first_field := build_type == "field" and get_field_count() <= 0
 	var can_afford := GameState.can_afford_build(_current_build_id)
+	if free_first_field:
+		can_afford = true
 	_preview_position = snapped
 	_preview_valid = can_afford and not blocked
 	_set_preview_visible(true)
@@ -527,11 +541,15 @@ func _try_place_current_build() -> void:
 	if definition.is_empty():
 		GameState.cancel_build_mode()
 		return
-	if not GameState.spend_for_build(_current_build_id):
-		print("Nicht genug Geld fuer den Bau:", _current_build_id)
-		GameState.cancel_build_mode()
-		return
 	var build_type := String(definition.get("build_type", ""))
+	var skip_cost := build_type == "field" and get_field_count() <= 0
+	var spent_cost := false
+	if not skip_cost:
+		if not GameState.spend_for_build(_current_build_id):
+			print("Nicht genug Geld fuer den Bau:", _current_build_id)
+			GameState.cancel_build_mode()
+			return
+		spent_cost = true
 	var metadata: Dictionary = {}
 	match build_type:
 		"field":
@@ -539,9 +557,10 @@ func _try_place_current_build() -> void:
 		_:
 			metadata = _place_generic_build(definition)
 	if metadata.is_empty():
-		var refund := int(definition.get("cost", 0))
-		if refund > 0 and GameState.has_method("add_money"):
-			GameState.add_money(refund)
+		if spent_cost:
+			var refund := int(definition.get("cost", 0))
+			if refund > 0 and GameState.has_method("add_money"):
+				GameState.add_money(refund)
 		print("Konnte Bauobjekt nicht erstellen:", _current_build_id)
 		GameState.cancel_build_mode()
 		return

@@ -35,7 +35,6 @@ const BUILD_MENU_CATEGORY_ORDER := [
 @onready var menu: PopupMenu = $PlantMenu
 @onready var money_label: Label = $WalletPanel/MoneyLabel
 @onready var rent_label: Label = $WalletPanel/RentLabel
-@onready var buy_field_button: Button = $WalletPanel/BuyFieldButton
 @onready var storage_button: Button = $WalletPanel/StorageButton
 @onready var market_button: Button = $WalletPanel/MarketButton
 @onready var storage_popup: PopupPanel = $StoragePopup
@@ -94,8 +93,6 @@ var _build_category_button_group: ButtonGroup = ButtonGroup.new()
 func _ready():
 	add_to_group("ui")      # damit Tiles dich finden
 	field_manager = _find_field_manager()
-	if buy_field_button:
-		buy_field_button.pressed.connect(_on_buy_field_pressed)
 	if storage_button:
 		storage_button.pressed.connect(_on_storage_button_pressed)
 	if storage_close_button:
@@ -413,7 +410,6 @@ func _resolve_field_state(tile: Node) -> int:
 func _on_money_changed(amount: int) -> void:
 	if money_label:
 		money_label.text = "Geld: %d" % amount
-	_update_buy_button()
 	_update_market_money(amount)
 	_update_market_buttons_state(amount)
 	_update_research_rows()
@@ -430,48 +426,28 @@ func _on_rent_cost_changed(hourly_cost: int) -> void:
 			var feld_text := "Felder" if rented_fields != 1 else "Feld"
 			rent_label.text = "Mietkosten: %d G/Stunde (%d %s)" % [hourly_cost, rented_fields, feld_text]
 
-func _on_buy_field_pressed() -> void:
-	if field_manager == null:
-		field_manager = _find_field_manager()
-	if field_manager and field_manager.has_method("buy_field"):
-		var success: bool = field_manager.buy_field()
-		if not success:
-			print("Feldkauf fehlgeschlagen")
-	_update_buy_button()
-
-func _update_buy_button() -> void:
-	if buy_field_button == null:
-		return
-	if field_manager == null:
-		field_manager = _find_field_manager()
-	var cost: int = 10
-	if field_manager and field_manager.has_method("get_field_cost"):
-		var field_cost_variant: Variant = field_manager.call("get_field_cost")
-		match typeof(field_cost_variant):
-			TYPE_INT:
-				cost = int(field_cost_variant)
-			TYPE_FLOAT:
-				cost = int(round(float(field_cost_variant)))
-	buy_field_button.text = "Feld kaufen (%d)" % cost
-	if field_manager == null:
-		buy_field_button.disabled = true
-		return
-	var disabled: bool = true
-	if field_manager.has_method("can_buy_field"):
-		disabled = not field_manager.can_buy_field()
-	else:
-		disabled = GameState.money < cost
-	buy_field_button.disabled = disabled
-
 func _find_field_manager() -> Node:
 	var managers: Array[Node] = get_tree().get_nodes_in_group("field_manager")
 	if managers.is_empty():
 		return null
 	return managers[0]
 
+func _get_current_field_count() -> int:
+	if field_manager == null:
+		field_manager = _find_field_manager()
+	if field_manager and field_manager.has_method("get_field_count"):
+		var field_count_variant: Variant = field_manager.call("get_field_count")
+		match typeof(field_count_variant):
+			TYPE_INT:
+				return int(field_count_variant)
+			TYPE_FLOAT:
+				return int(round(float(field_count_variant)))
+	if not _known_field_names.is_empty():
+		return _known_field_names.size()
+	return 0
+
 func _refresh_field_manager() -> void:
 	field_manager = _find_field_manager()
-	_update_buy_button()
 
 func _on_storage_button_pressed() -> void:
 	if storage_popup == null:
@@ -1077,6 +1053,8 @@ func _on_fields_changed(field_names: Array) -> void:
 		if typeof(entry) == TYPE_STRING:
 			_known_field_names.append(String(entry))
 	_known_field_names.sort()
+	_update_build_button_states()
+	_refresh_build_info_label()
 	_update_personnel_view()
 
 func _update_personnel_view() -> void:
@@ -1323,6 +1301,7 @@ func _update_build_button_states() -> void:
 	var catalog: Dictionary = {}
 	if GameState.has_method("get_build_catalog"):
 		catalog = GameState.get_build_catalog()
+	var current_fields := _get_current_field_count()
 	for build_id in _build_item_buttons.keys():
 		var button: Button = _build_item_buttons.get(build_id, null)
 		if button == null:
@@ -1333,10 +1312,16 @@ func _update_build_button_states() -> void:
 			def = def_variant
 		var label := String(def.get("label", build_id))
 		var cost := int(def.get("cost", 0))
-		button.text = "%s (%d G)" % [label, cost]
+		var build_type := String(def.get("build_type", ""))
+		var effective_cost := cost
+		if build_type == "field" and current_fields <= 0:
+			effective_cost = 0
+		button.text = "%s (%d G)" % [label, effective_cost]
 		var can_afford := true
 		if GameState.has_method("can_afford_build"):
 			can_afford = GameState.can_afford_build(build_id)
+		if build_type == "field" and current_fields <= 0:
+			can_afford = true
 		button.disabled = not can_afford
 		var description := String(def.get("description", ""))
 		if not description.is_empty():
@@ -1551,6 +1536,9 @@ func _refresh_build_info_label() -> void:
 		def = GameState.get_build_definition(active_id)
 	var label := String(def.get("label", active_id))
 	var cost := int(def.get("cost", 0))
+	var build_type := String(def.get("build_type", ""))
+	if build_type == "field" and _get_current_field_count() <= 0:
+		cost = 0
 	var hint := "Linksklick platziert, Rechtsklick beendet."
 	if cost > 0:
 		build_info_label.text = "%s (%d G). %s" % [label, cost, hint]
