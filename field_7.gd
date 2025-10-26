@@ -23,6 +23,12 @@ const CROP_OFFSET := {
 	"wheat": Vector3(0, 0, 0),
 }
 const GROWTH_PROGRESS_REPORT_INTERVAL := 0.25
+const PROGRESS_BAR_SIZE := Vector2(0.9, 0.12)
+const PROGRESS_BAR_HEIGHT := 0.9
+const PROGRESS_BAR_LABEL_OFFSET := Vector3(0.0, 0.18, 0.0)
+const PROGRESS_BAR_BACK_COLOR := Color(0.05, 0.05, 0.05, 0.7)
+const PROGRESS_BAR_FILL_COLOR := Color(0.2, 0.75, 0.15, 0.9)
+const PROGRESS_BAR_READY_COLOR := Color(0.9, 0.8, 0.25, 0.95)
 
 enum FieldState { EMPTY, GROWING, READY }
 
@@ -33,6 +39,7 @@ var crop_type: String = ""
 @onready var body: StaticBody3D   = _ensure_body()
 @onready var growth_timer: Timer  = _ensure_timer()
 @onready var crop_container: Node3D = _ensure_crop_container()
+@onready var progress_root: Node3D = _ensure_progress_bar()
 var crop_visual: Node3D = null
 var active_phases: Array = []
 var phase_durations: Array[float] = []
@@ -45,12 +52,16 @@ var total_growth_duration: float = 0.0
 var _growth_report_accumulator: float = 0.0
 var _last_reported_progress: float = -1.0
 var _last_reported_time_left: float = -1.0
+var _progress_background: MeshInstance3D = null
+var _progress_fill: MeshInstance3D = null
+var _progress_label: Label3D = null
 
 func _ready():
 	body.input_event.connect(_on_input_event)
 	if GameState.has_method("register_field"):
 		GameState.register_field(self)
 	_update_visual()
+	_set_progress_visibility(false)
 	set_process(false)
 
 func _exit_tree() -> void:
@@ -182,6 +193,78 @@ func _ensure_crop_container() -> Node3D:
 		)
 		add_child(container)
 	return container
+
+func _ensure_progress_bar() -> Node3D:
+	var root := get_node_or_null("ProgressBar")
+	var parent_scale := scale
+	var safe_scale := Vector3(
+		parent_scale.x if abs(parent_scale.x) > 0.0001 else 1.0,
+		parent_scale.y if abs(parent_scale.y) > 0.0001 else 1.0,
+		parent_scale.z if abs(parent_scale.z) > 0.0001 else 1.0
+	)
+	if root == null:
+		root = Node3D.new()
+		root.name = "ProgressBar"
+		root.position = Vector3(0.0, PROGRESS_BAR_HEIGHT, 0.0)
+		add_child(root)
+	var background := root.get_node_or_null("Background") as MeshInstance3D
+	if background == null:
+		background = MeshInstance3D.new()
+		background.name = "Background"
+		var back_mesh := QuadMesh.new()
+		back_mesh.size = PROGRESS_BAR_SIZE
+		background.mesh = back_mesh
+		root.add_child(background)
+	background.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	background.position = Vector3.ZERO
+	var fill := root.get_node_or_null("Fill") as MeshInstance3D
+	if fill == null:
+		fill = MeshInstance3D.new()
+		fill.name = "Fill"
+		var fill_mesh := QuadMesh.new()
+		fill_mesh.size = PROGRESS_BAR_SIZE
+		fill.mesh = fill_mesh
+		root.add_child(fill)
+	fill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	fill.position = Vector3(0.0, 0.0, -0.001)
+	var time_label := root.get_node_or_null("TimeLabel") as Label3D
+	if time_label == null:
+		time_label = Label3D.new()
+		time_label.name = "TimeLabel"
+		time_label.position = PROGRESS_BAR_LABEL_OFFSET
+		time_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		time_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		time_label.text = "00:00"
+		time_label.pixel_size = 0.015
+		root.add_child(time_label)
+	if background.material_override == null:
+		var back_material := StandardMaterial3D.new()
+		back_material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		back_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		back_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		back_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+		back_material.albedo_color = PROGRESS_BAR_BACK_COLOR
+		background.material_override = back_material
+	if fill.material_override == null:
+		var fill_material := StandardMaterial3D.new()
+		fill_material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		fill_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		fill_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		fill_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+		fill_material.albedo_color = PROGRESS_BAR_FILL_COLOR
+		fill.material_override = fill_material
+	root.scale = Vector3(
+		1.0 / safe_scale.x,
+		1.0 / safe_scale.y,
+		1.0 / safe_scale.z
+	)
+	root.rotation = Vector3.ZERO
+	_progress_background = background
+	_progress_fill = fill
+	_progress_label = time_label
+	root.visible = false
+	return root
 
 func _update_visual():
 	# hier gibt es garantiert ein Mesh & Material
@@ -473,9 +556,7 @@ func _compute_growth_progress(time_left: float) -> float:
 	return clamp(1.0 - (time_left / total_growth_duration), 0.0, 1.0)
 
 func _report_growth_progress(force: bool = false) -> void:
-	if not GameState.has_method("update_field_growth_info"):
-		return
-	var state_value: int = state
+	var state_value: int = int(state)
 	var time_left: float = 0.0
 	var progress: float = 0.0
 	match state_value:
@@ -488,9 +569,62 @@ func _report_growth_progress(force: bool = false) -> void:
 		_:
 			time_left = 0.0
 			progress = 0.0
+	_update_progress_visual(state_value, progress, time_left)
+	if not GameState.has_method("update_field_growth_info"):
+		return
 	if not force:
 		if abs(progress - _last_reported_progress) < 0.01 and abs(time_left - _last_reported_time_left) < 0.1:
 			return
-	GameState.update_field_growth_info(self, state_value, progress, time_left, total_growth_duration)
+	GameState.update_field_growth_info(self, state_value, progress, time_left, total_growth_duration, crop_type)
 	_last_reported_progress = progress
 	_last_reported_time_left = time_left
+
+func _update_progress_visual(state_value: int, progress: float, time_left: float) -> void:
+	if progress_root == null:
+		return
+	match state_value:
+		FieldState.GROWING:
+			_set_progress_visibility(true)
+			_apply_progress_fill(progress, PROGRESS_BAR_FILL_COLOR)
+			_update_progress_label(_format_time_remaining(time_left))
+		FieldState.READY:
+			_set_progress_visibility(true)
+			_apply_progress_fill(1.0, PROGRESS_BAR_READY_COLOR)
+			_update_progress_label("Bereit")
+		_:
+			_set_progress_visibility(false)
+
+func _set_progress_visibility(visible: bool) -> void:
+	if progress_root:
+		progress_root.visible = visible
+	if _progress_background:
+		_progress_background.visible = visible
+	if _progress_fill:
+		_progress_fill.visible = visible
+	if _progress_label:
+		_progress_label.visible = visible
+
+func _apply_progress_fill(value: float, color: Color) -> void:
+	if _progress_fill == null or _progress_background == null:
+		return
+	var clamped: float = clamp(value, 0.0, 1.0)
+	var safe: float = max(clamped, 0.001)
+	var half_width := PROGRESS_BAR_SIZE.x * 0.5
+	_progress_fill.scale = Vector3(safe, 1.0, 1.0)
+	_progress_fill.position.x = -half_width + (half_width * clamped)
+	var fill_material := _progress_fill.material_override as StandardMaterial3D
+	if fill_material:
+		fill_material.albedo_color = color
+
+func _update_progress_label(text_value: String) -> void:
+	if _progress_label == null:
+		return
+	_progress_label.text = text_value
+
+func _format_time_remaining(seconds_left: float) -> String:
+	var total_seconds := int(round(max(seconds_left, 0.0)))
+	var minutes := total_seconds / 60
+	var seconds := total_seconds % 60
+	if minutes >= 99:
+		return "%d:--" % minutes
+	return "%02d:%02d" % [minutes, seconds]

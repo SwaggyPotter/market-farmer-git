@@ -967,9 +967,9 @@ func update_field_growth_info(field_node: Node, state_value: int, progress: floa
 		if _field_growth_info.erase(field_name):
 			field_growth_changed.emit(field_name, {})
 		return
-	var clamped_progress := clamp(progress, 0.0, 1.0)
-	var safe_time_left := max(time_left, 0.0)
-	var safe_total := max(total_duration, 0.0)
+	var clamped_progress: float = clamp(progress, 0.0, 1.0)
+	var safe_time_left: float = max(time_left, 0.0)
+	var safe_total: float = max(total_duration, 0.0)
 	var info := {
 		"state": state_value,
 		"progress": clamped_progress,
