@@ -25,6 +25,7 @@ const FARMER_STATUS_IDLE := "idle"
 const FARMER_STATUS_ASSIGNED := "assigned"
 const PERSONNEL_SELECTOR_NONE_LABEL := "Kein Feld"
 const BUILD_MENU_CATEGORY_ORDER := [
+	{"id": "field", "label": "Felder"},
 	{"id": "decor", "label": "Dekorationen"},
 	{"id": "road", "label": "Strassen"},
 	{"id": "power", "label": "Stromerzeugung"},

@@ -29,6 +29,7 @@ var _preview_valid: bool = false
 var _preview_build_id: String = ""
 var _preview_base_color: Color = Color.WHITE
 var _build_index_counter: int = 0
+var _field_build_index: int = 0
 var _camera: Camera3D = null
 
 func _ready() -> void:
@@ -459,8 +460,18 @@ func _snap_build_position(position: Vector3, definition: Dictionary) -> Vector3:
 	return Vector3(snapped_x, 0.0, snapped_z)
 
 func _is_position_blocked(position: Vector3, definition: Dictionary) -> bool:
-	var container: Node3D = _ensure_build_container()
-	if container == null:
+	var containers: Array[Node3D] = []
+	var build_container := _ensure_build_container()
+	if build_container:
+		containers.append(build_container)
+	var existing_field_container := _field_container
+	if existing_field_container == null:
+		existing_field_container = get_node_or_null(field_container_path) as Node3D
+		if existing_field_container:
+			_field_container = existing_field_container
+	if existing_field_container:
+		containers.append(existing_field_container)
+	if containers.is_empty():
 		return false
 	var size_variant: Variant = definition.get("size", Vector3.ONE)
 	var size := Vector3.ONE
@@ -470,13 +481,14 @@ func _is_position_blocked(position: Vector3, definition: Dictionary) -> bool:
 		var arr: Array = size_variant
 		size = Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
 	var radius: float = max(max(size.x, size.z) * 0.5, 0.5)
-	for child in container.get_children():
-		if child is Node3D:
-			var node: Node3D = child as Node3D
-			var node_pos: Vector3 = node.global_position
-			var delta: Vector2 = Vector2(node_pos.x, node_pos.z) - Vector2(position.x, position.z)
-			if delta.length() < radius:
-				return true
+	for container in containers:
+		for child in container.get_children():
+			if child is Node3D:
+				var node: Node3D = child as Node3D
+				var node_pos: Vector3 = node.global_position
+				var delta: Vector2 = Vector2(node_pos.x, node_pos.z) - Vector2(position.x, position.z)
+				if delta.length() < radius:
+					return true
 	return false
 
 func _set_preview_visible(visible: bool) -> void:
@@ -519,22 +531,106 @@ func _try_place_current_build() -> void:
 		print("Nicht genug Geld fuer den Bau:", _current_build_id)
 		GameState.cancel_build_mode()
 		return
-	var container := _ensure_build_container()
-	if container == null:
+	var build_type := String(definition.get("build_type", ""))
+	var metadata: Dictionary = {}
+	match build_type:
+		"field":
+			metadata = _place_field_build(definition)
+		_:
+			metadata = _place_generic_build(definition)
+	if metadata.is_empty():
+		var refund := int(definition.get("cost", 0))
+		if refund > 0 and GameState.has_method("add_money"):
+			GameState.add_money(refund)
+		print("Konnte Bauobjekt nicht erstellen:", _current_build_id)
 		GameState.cancel_build_mode()
 		return
+	GameState.register_build_instance(_current_build_id, metadata)
+
+func _place_generic_build(definition: Dictionary) -> Dictionary:
+	var container := _ensure_build_container()
+	if container == null:
+		return {}
 	var instance := _create_build_mesh(definition, false)
 	if instance == null:
-		print("Konnte Bauobjekt nicht erstellen:", _current_build_id)
-		return
+		return {}
 	instance.name = _generate_build_name(_current_build_id)
 	var height := _get_build_height(definition)
 	instance.position = Vector3(_preview_position.x, height * 0.5, _preview_position.z)
 	container.add_child(instance)
-	GameState.register_build_instance(_current_build_id, {
+	return {
 		"position": instance.global_position,
 		"height": height,
-	})
+	}
+
+func _place_field_build(definition: Dictionary) -> Dictionary:
+	var container := _ensure_field_container()
+	if container == null:
+		return {}
+	var scene := _extract_field_scene(definition)
+	if scene == null:
+		push_warning("Keine Feld-Szene fuer den Bau definiert.")
+		return {}
+	var instance := scene.instantiate()
+	if instance == null:
+		return {}
+	if not (instance is Node3D):
+		instance.queue_free()
+		return {}
+	var field := instance as Node3D
+	var name_prefix := String(definition.get("field_name_prefix", "Field"))
+	field.name = _generate_field_name(name_prefix)
+	field.position = Vector3.ZERO
+	field.rotation = Vector3.ZERO
+	field.scale = Vector3.ONE
+	container.add_child(field)
+	field.global_position = Vector3(_preview_position.x, 0.0, _preview_position.z)
+	if _ensure_field_model_container():
+		_update_model_reference()
+		_align_existing_models()
+	if GameState.has_method("update_field_count"):
+		GameState.update_field_count(get_field_count())
+	var height := _get_build_height(definition)
+	return {
+		"position": field.global_position,
+		"height": height,
+		"field_name": field.name,
+		"node_path": field.get_path(),
+		"build_type": "field",
+	}
+
+func _extract_field_scene(definition: Dictionary) -> PackedScene:
+	var scene_variant: Variant = definition.get("scene", null)
+	if scene_variant is PackedScene:
+		return scene_variant
+	if scene_variant is String and not String(scene_variant).is_empty():
+		var resource := load(String(scene_variant))
+		if resource is PackedScene:
+			return resource as PackedScene
+	if field_scene:
+		return field_scene
+	return null
+
+func _generate_field_name(prefix: String) -> String:
+	var base := prefix.strip_edges()
+	if base.is_empty():
+		base = "Field"
+	var known_fields: Array = []
+	if GameState.has_method("get_known_fields"):
+		known_fields = GameState.get_known_fields()
+	var attempts := 0
+	while attempts < 4096:
+		_field_build_index += 1
+		var candidate := "%s%d" % [base, _field_build_index]
+		if _field_container and _field_container.get_node_or_null(NodePath(candidate)):
+			attempts += 1
+			continue
+		if candidate in known_fields:
+			attempts += 1
+			continue
+		return candidate
+	var fallback := "%s_%d" % [base, int(Time.get_ticks_msec())]
+	return fallback
 
 func _ensure_build_container() -> Node3D:
 	if _build_container != null and is_instance_valid(_build_container):
@@ -549,6 +645,24 @@ func _ensure_build_container() -> Node3D:
 	add_child(_build_container)
 	_build_index_counter = max(_build_index_counter, _build_container.get_child_count())
 	return _build_container
+
+func _ensure_field_container() -> Node3D:
+	if _field_container != null and is_instance_valid(_field_container):
+		return _field_container
+	_field_container = get_node_or_null(field_container_path) as Node3D
+	if _field_container != null:
+		return _field_container
+	var container := Node3D.new()
+	container.name = "FieldContainer"
+	add_child(container)
+	_field_container = container
+	return _field_container
+
+func _ensure_field_model_container() -> Node3D:
+	if _field_model_container != null and is_instance_valid(_field_model_container):
+		return _field_model_container
+	_field_model_container = get_node_or_null(field_model_container_path) as Node3D
+	return _field_model_container
 
 func _generate_build_name(build_id: String) -> String:
 	_build_index_counter += 1

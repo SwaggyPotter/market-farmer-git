@@ -74,6 +74,19 @@ const ITEM_UNITS := {
 	ITEM_CATEGORY_HARVESTED: "t",
 }
 const BUILD_CATALOG := {
+	"field_basic": {
+		"label": "Ackerfeld",
+		"description": "Erzeugt zusaetzliche Flaeche fuer den Anbau.",
+		"cost": 10,
+		"category": "field",
+		"category_label": "Felder",
+		"shape": "box",
+		"size": Vector3(1.0, 0.2, 1.0),
+		"color": Color(0.42, 0.26, 0.12),
+		"snap": 1.0,
+		"build_type": "field",
+		"scene": "res://Tile.tscn",
+	},
 	"road_straight": {
 		"label": "Strasse",
 		"description": "Gerade Strasse, perfekt um Felder zu verbinden.",
