@@ -48,6 +48,17 @@ const BUILD_MENU_CATEGORY_ORDER := [
 @onready var market_seeds_container: VBoxContainer = $MarketPopup/MarketMargin/MarketVBox/MarketSections/SeedsSection/SeedsContainer
 @onready var market_fertilizer_container: VBoxContainer = $MarketPopup/MarketMargin/MarketVBox/MarketSections/FertilizerSection/FertilizerContainer
 @onready var market_log_container: VBoxContainer = $MarketPopup/MarketMargin/MarketVBox/MarketLogScroll/MarketLogContainer
+@onready var world_market_button: Button = $WalletPanel/WorldMarketButton
+@onready var world_market_popup: PopupPanel = $WorldMarketPopup
+@onready var world_market_close_button: Button = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/WorldMarketCloseButton
+@onready var world_market_search: LineEdit = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/SearchRow/WorldMarketSearch
+@onready var world_market_clear_button: Button = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/SearchRow/WorldMarketClearButton
+@onready var world_market_list: ItemList = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/ProductsSection/ProductList
+@onready var world_market_selected_label: Label = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/SelectedProductLabel
+@onready var world_market_price_label: Label = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/CurrentPriceLabel
+@onready var world_market_supply_label: Label = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/SupplyDemandLabel
+@onready var world_market_updated_label: Label = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/UpdatedLabel
+@onready var world_market_history_container: VBoxContainer = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/HistoryScroll/HistoryList
 @onready var research_button: Button = $WalletPanel/ResearchButton
 @onready var research_popup: PopupPanel = $ResearchPopup
 @onready var research_entries_scroll: ScrollContainer = $ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll
@@ -73,6 +84,9 @@ var _latest_inventory: Dictionary = {}
 var _latest_supplies: Dictionary = {}
 var _market_item_buttons: Dictionary = {}
 var _market_item_stock_labels: Dictionary = {}
+var _world_market_entries: Array = []
+var _world_market_selection: String = ""
+var _world_market_overview: Dictionary = {}
 var _latest_research_state: Dictionary = {}
 var _research_rows: Dictionary = {}
 var _latest_farmers: Array = []
@@ -101,6 +115,17 @@ func _ready():
 		market_button.pressed.connect(_on_market_button_pressed)
 	if market_close_button:
 		market_close_button.pressed.connect(_on_market_close_pressed)
+	if world_market_button:
+		world_market_button.pressed.connect(_on_world_market_button_pressed)
+	if world_market_close_button:
+		world_market_close_button.pressed.connect(_on_world_market_close_pressed)
+	if world_market_search:
+		world_market_search.text_changed.connect(_on_world_market_search_changed)
+		world_market_search.text_submitted.connect(_on_world_market_search_submitted)
+	if world_market_clear_button:
+		world_market_clear_button.pressed.connect(_on_world_market_clear_pressed)
+	if world_market_list:
+		world_market_list.item_selected.connect(_on_world_market_item_selected)
 	if research_button:
 		research_button.pressed.connect(_on_research_button_pressed)
 	if research_close_button:
@@ -121,6 +146,8 @@ func _ready():
 	GameState.inventory_changed.connect(_on_inventory_changed)
 	GameState.supplies_changed.connect(_on_supplies_changed)
 	GameState.market_log_updated.connect(_on_market_log_updated)
+	if GameState.has_signal("world_market_updated"):
+		GameState.world_market_updated.connect(_on_world_market_updated)
 	GameState.rent_cost_changed.connect(_on_rent_cost_changed)
 	GameState.research_state_changed.connect(_on_research_state_changed)
 	GameState.farmers_changed.connect(_on_farmers_changed)
@@ -132,6 +159,8 @@ func _ready():
 	_on_money_changed(GameState.money)
 	_on_inventory_changed(_latest_inventory)
 	_setup_market_ui()
+	_on_world_market_updated(GameState.get_world_market_overview())
+	_setup_world_market_ui()
 	_setup_research_ui()
 	_on_supplies_changed(_latest_supplies)
 	_on_market_log_updated(GameState.get_market_log())
@@ -823,6 +852,187 @@ func _update_market_log(entries: Array) -> void:
 		label.text = _format_market_log_entry(entry_dict)
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		market_log_container.add_child(label)
+
+func _setup_world_market_ui() -> void:
+	_world_market_entries.clear()
+	if world_market_list:
+		world_market_list.clear()
+	_refresh_world_market_list(false)
+
+func _refresh_world_market_list(preserve_selection: bool = true) -> void:
+	if world_market_list == null:
+		return
+	var previous_selection := _world_market_selection if preserve_selection else ""
+	var query := ""
+	if world_market_search:
+		query = world_market_search.text
+	if GameState.has_method("search_world_market_products"):
+		_world_market_entries = GameState.search_world_market_products(query)
+	else:
+		_world_market_entries.clear()
+	world_market_list.clear()
+	if _world_market_entries.is_empty():
+		world_market_list.add_item("Keine Ergebnisse")
+		world_market_list.set_item_disabled(0, true)
+		_world_market_selection = ""
+		_reset_world_market_details()
+		return
+	var selected_index := -1
+	for index in range(_world_market_entries.size()):
+		var entry_variant: Variant = _world_market_entries[index]
+		if not (entry_variant is Dictionary):
+			continue
+		var entry: Dictionary = entry_variant as Dictionary
+		var product_id := String(entry.get("id", ""))
+		var display_name := String(entry.get("display_name", product_id))
+		var price := float(entry.get("current_price", 0.0))
+		var item_text := "%s  (%.2f)" % [display_name, price]
+		world_market_list.add_item(item_text)
+		if preserve_selection and not previous_selection.is_empty() and product_id == previous_selection:
+			selected_index = index
+	if selected_index < 0:
+		selected_index = 0
+	world_market_list.select(selected_index)
+	if selected_index >= 0 and selected_index < _world_market_entries.size():
+		var selected_entry_variant: Variant = _world_market_entries[selected_index]
+		if selected_entry_variant is Dictionary:
+			var selected_entry: Dictionary = selected_entry_variant as Dictionary
+			_world_market_selection = String(selected_entry.get("id", ""))
+			_update_world_market_details(_world_market_selection)
+	else:
+		_world_market_selection = ""
+		_reset_world_market_details()
+
+func _reset_world_market_details() -> void:
+	if world_market_selected_label:
+		world_market_selected_label.text = "Auswahl: -"
+	if world_market_price_label:
+		world_market_price_label.text = "Preis: -"
+	if world_market_supply_label:
+		world_market_supply_label.text = "Angebot: - | Nachfrage: -"
+	if world_market_updated_label:
+		world_market_updated_label.text = "Aktualisiert: -"
+	_populate_world_market_history([])
+
+func _update_world_market_details(product_id: String) -> void:
+	_reset_world_market_details()
+	if product_id.is_empty():
+		return
+	var entry: Dictionary = {}
+	if GameState.has_method("get_world_market_entry"):
+		entry = GameState.get_world_market_entry(product_id)
+	if entry.is_empty():
+		return
+	var display_name := String(entry.get("display_name", product_id))
+	if world_market_selected_label:
+		world_market_selected_label.text = "Auswahl: %s" % display_name
+	if world_market_price_label:
+		world_market_price_label.text = "Preis: %.2f" % float(entry.get("current_price", 0.0))
+	if world_market_supply_label:
+		var supply := float(entry.get("supply_index", 0.0))
+		var demand := float(entry.get("demand_index", 0.0))
+		world_market_supply_label.text = "Angebot: %.1f | Nachfrage: %.1f" % [supply, demand]
+	if world_market_updated_label:
+		world_market_updated_label.text = "Aktualisiert: %s" % _format_world_market_timestamp(int(entry.get("last_update", 0)))
+	var history: Array = []
+	if GameState.has_method("get_world_market_history"):
+		history = GameState.get_world_market_history(product_id)
+	_populate_world_market_history(history)
+
+func _populate_world_market_history(history: Array) -> void:
+	if world_market_history_container == null:
+		return
+	for child in world_market_history_container.get_children():
+		child.queue_free()
+	if history.is_empty():
+		var empty_label := Label.new()
+		empty_label.text = "Noch keine Preisverlaeufe."
+		world_market_history_container.add_child(empty_label)
+		return
+	var ordered: Array = history.duplicate()
+	ordered.reverse()
+	var added := 0
+	for point_variant in ordered:
+		if not (point_variant is Dictionary):
+			continue
+		var point: Dictionary = point_variant
+		var label := Label.new()
+		label.text = _format_world_market_history_entry(point)
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		world_market_history_container.add_child(label)
+		added += 1
+		if added >= 20:
+			break
+
+func _format_world_market_history_entry(point: Dictionary) -> String:
+	var timestamp := int(point.get("timestamp", 0))
+	var price := float(point.get("price", 0.0))
+	var supply := float(point.get("supply", 0.0))
+	var demand := float(point.get("demand", 0.0))
+	var time_text := _format_world_market_timestamp(timestamp)
+	return "%s - %.2f (A: %.1f | N: %.1f)" % [time_text, price, supply, demand]
+
+func _format_world_market_timestamp(timestamp: int) -> String:
+	if timestamp <= 0:
+		return "unbekannt"
+	var now := Time.get_ticks_msec()
+	var delta_ms := int(max(now - timestamp, 0))
+	var seconds := delta_ms / 1000
+	if seconds <= 1:
+		return "gerade eben"
+	if seconds < 60:
+		return "vor %d s" % seconds
+	var minutes := seconds / 60
+	if minutes < 60:
+		return "vor %d min" % minutes
+	var hours := minutes / 60
+	if hours < 24:
+		return "vor %d h" % hours
+	var days := hours / 24
+	return "vor %d d" % days
+
+func _on_world_market_updated(state: Dictionary) -> void:
+	_world_market_overview = state.duplicate(true)
+	if world_market_button:
+		world_market_button.tooltip_text = "Weltweiter Markt (%d Produkte)" % int(state.size())
+	if world_market_popup and world_market_popup.visible:
+		_refresh_world_market_list()
+
+func _on_world_market_button_pressed() -> void:
+	_refresh_world_market_list()
+	if world_market_popup:
+		world_market_popup.popup_centered_ratio(0.85)
+		if world_market_search:
+			world_market_search.grab_focus()
+
+func _on_world_market_close_pressed() -> void:
+	if world_market_popup:
+		world_market_popup.hide()
+
+func _on_world_market_search_changed(new_text: String) -> void:
+	_refresh_world_market_list()
+
+func _on_world_market_search_submitted(new_text: String) -> void:
+	_refresh_world_market_list()
+	if world_market_list:
+		world_market_list.grab_focus()
+
+func _on_world_market_clear_pressed() -> void:
+	if world_market_search:
+		world_market_search.text = ""
+	_refresh_world_market_list(false)
+	if world_market_search:
+		world_market_search.grab_focus()
+
+func _on_world_market_item_selected(index: int) -> void:
+	if index < 0 or index >= _world_market_entries.size():
+		return
+	var entry_variant: Variant = _world_market_entries[index]
+	if not (entry_variant is Dictionary):
+		return
+	var entry: Dictionary = entry_variant as Dictionary
+	_world_market_selection = String(entry.get("id", ""))
+	_update_world_market_details(_world_market_selection)
 
 func _setup_research_ui() -> void:
 	if research_entries_container == null or research_empty_label == null:

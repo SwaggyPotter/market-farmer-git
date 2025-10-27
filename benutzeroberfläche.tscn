@@ -91,7 +91,17 @@ offset_top = 216.0
 offset_right = 152.0
 offset_bottom = 252.0
 size_flags_horizontal = 4
-text = "Markt oeffnen"
+text = "Samen-/Duenger-Markt"
+
+[node name="WorldMarketButton" type="Button" parent="WalletPanel"]
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 12.0
+offset_top = 260.0
+offset_right = 152.0
+offset_bottom = 296.0
+size_flags_horizontal = 4
+text = "Weltmarkt"
 
 [node name="BuildButton" type="Button" parent="."]
 anchor_left = 1.0
@@ -176,7 +186,7 @@ grow_vertical = 2
 theme_override_constants/separation = 12
 
 [node name="MarketTitleLabel" type="Label" parent="MarketPopup/MarketMargin/MarketVBox"]
-text = "Markt"
+text = "Samen- & Duengermarkt"
 horizontal_alignment = 1
 
 [node name="MarketMoneyLabel" type="Label" parent="MarketPopup/MarketMargin/MarketVBox"]
@@ -230,6 +240,104 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
 [node name="MarketCloseButton" type="Button" parent="MarketPopup/MarketMargin/MarketVBox"]
+text = "Schliessen"
+text_alignment = 1
+size_flags_horizontal = 4
+
+[node name="WorldMarketPopup" type="PopupPanel" parent="."]
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 0.0
+custom_minimum_size = Vector2(960, 640)
+
+[node name="WorldMarketMargin" type="MarginContainer" parent="WorldMarketPopup"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = -16.0
+
+[node name="WorldMarketVBox" type="VBoxContainer" parent="WorldMarketPopup/WorldMarketMargin"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="WorldMarketTitleLabel" type="Label" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox"]
+text = "Weltweiter Markt"
+horizontal_alignment = 1
+
+[node name="SearchRow" type="HBoxContainer" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="WorldMarketSearch" type="LineEdit" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/SearchRow"]
+size_flags_horizontal = 3
+placeholder_text = "Produkt suchen..."
+
+[node name="WorldMarketClearButton" type="Button" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/SearchRow"]
+text = "Leeren"
+size_flags_horizontal = 1
+
+[node name="Content" type="HBoxContainer" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="ProductsSection" type="VBoxContainer" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content"]
+size_flags_horizontal = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="ProductsLabel" type="Label" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/ProductsSection"]
+text = "Produkte"
+horizontal_alignment = 1
+
+[node name="ProductList" type="ItemList" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/ProductsSection"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+custom_minimum_size = Vector2(260, 360)
+select_mode = 1
+
+[node name="DetailsSection" type="VBoxContainer" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="DetailsLabel" type="Label" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection"]
+text = "Details"
+horizontal_alignment = 1
+
+[node name="SelectedProductLabel" type="Label" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection"]
+text = "Auswahl: -"
+
+[node name="CurrentPriceLabel" type="Label" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection"]
+text = "Preis: -"
+
+[node name="SupplyDemandLabel" type="Label" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection"]
+text = "Angebot: - | Nachfrage: -"
+
+[node name="UpdatedLabel" type="Label" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection"]
+text = "Aktualisiert: -"
+
+[node name="HistoryLabel" type="Label" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection"]
+text = "Preisverlauf"
+
+[node name="HistoryScroll" type="ScrollContainer" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+custom_minimum_size = Vector2(0, 260)
+
+[node name="HistoryList" type="VBoxContainer" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/HistoryScroll"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="WorldMarketCloseButton" type="Button" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox"]
 text = "Schliessen"
 text_alignment = 1
 size_flags_horizontal = 4

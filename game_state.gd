@@ -4,6 +4,7 @@ signal money_changed(amount: int)
 signal inventory_changed(storage: Dictionary)
 signal supplies_changed(supplies: Dictionary)
 signal market_log_updated(entries: Array)
+signal world_market_updated(state: Dictionary)
 signal rent_cost_changed(hourly_cost: int)
 signal research_state_changed(state: Dictionary)
 signal farmers_changed(farmers: Array)
@@ -37,6 +38,30 @@ const MARKET_CATALOG := {
 		{"id": "premium_fertilizer", "price": 24},
 	],
 }
+const WORLD_MARKET_PRODUCTS := {
+	"wheat": {
+		"base_price": 15.0,
+		"base_supply": 120.0,
+		"base_demand": 138.0,
+		"volatility": 0.12,
+		"elasticity": 0.65,
+		"supply_impact": 6.0,
+		"demand_impact": 4.5,
+		"mean_reversion": 0.08,
+	},
+	"potato": {
+		"base_price": 20.0,
+		"base_supply": 100.0,
+		"base_demand": 132.0,
+		"volatility": 0.10,
+		"elasticity": 0.70,
+		"supply_impact": 5.5,
+		"demand_impact": 4.0,
+		"mean_reversion": 0.09,
+	},
+}
+const WORLD_MARKET_HISTORY_LIMIT := 48
+const WORLD_MARKET_UPDATE_INTERVAL_SECONDS := 30.0
 const FERTILIZER_DEFINITIONS := {
 	"basic_fertilizer": {
 		"effects": [
@@ -249,6 +274,9 @@ var _money: int = START_MONEY
 var _storage: Dictionary = {}
 var _supplies: Dictionary = {}
 var _market_log: Array = []
+var _world_market_state: Dictionary = {}
+var _world_market_timer: Timer = null
+var _world_market_rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _paying_field_count: int = 0
 var _total_field_count: int = 0
 var _rent_timer: Timer = null
@@ -268,6 +296,8 @@ func _ready() -> void:
 	_rent_timer = _ensure_rent_timer()
 	_update_rent_timer_state()
 	_ensure_research_state_initialized()
+	_world_market_rng.randomize()
+	_initialize_world_market_state()
 	money_changed.emit(_money)
 	inventory_changed.emit(_storage.duplicate(true))
 	supplies_changed.emit(_supplies.duplicate(true))
@@ -319,6 +349,86 @@ func get_market_catalog() -> Dictionary:
 
 func get_market_log() -> Array:
 	return _market_log.duplicate(true)
+
+func get_world_market_overview() -> Dictionary:
+	var snapshot: Dictionary = {}
+	for product_id in _world_market_state.keys():
+		var entry_variant: Variant = _world_market_state.get(product_id, {})
+		if not (entry_variant is Dictionary):
+			continue
+		var entry: Dictionary = entry_variant as Dictionary
+		var copy: Dictionary = {
+			"id": product_id,
+			"display_name": String(entry.get("display_name", product_id)),
+			"current_price": float(entry.get("current_price", 0.0)),
+			"supply_index": float(entry.get("supply_index", 0.0)),
+			"demand_index": float(entry.get("demand_index", 0.0)),
+			"last_update": int(entry.get("last_update", 0)),
+		}
+		snapshot[product_id] = copy
+	return snapshot
+
+func search_world_market_products(query: String) -> Array:
+	var lowered_query: String = query.strip_edges().to_lower()
+	var entries: Array = []
+	for product_id in _world_market_state.keys():
+		var entry_variant: Variant = _world_market_state.get(product_id, {})
+		if not (entry_variant is Dictionary):
+			continue
+		var entry: Dictionary = entry_variant as Dictionary
+		var display_name: String = String(entry.get("display_name", product_id))
+		if lowered_query.is_empty() or product_id.to_lower().find(lowered_query) != -1 or display_name.to_lower().find(lowered_query) != -1:
+			entries.append({
+				"id": product_id,
+				"display_name": display_name,
+				"current_price": float(entry.get("current_price", 0.0)),
+				"supply_index": float(entry.get("supply_index", 0.0)),
+				"demand_index": float(entry.get("demand_index", 0.0)),
+			})
+	if entries.size() <= 1:
+		return entries
+	entries.sort_custom(Callable(self, "_sort_world_market_entries"))
+	return entries
+
+func _sort_world_market_entries(a: Dictionary, b: Dictionary) -> bool:
+	var left: String = String(a.get("display_name", a.get("id", ""))).to_lower()
+	var right: String = String(b.get("display_name", b.get("id", ""))).to_lower()
+	if left == right:
+		return String(a.get("id", "")).to_lower() < String(b.get("id", "")).to_lower()
+	return left < right
+
+func get_world_market_entry(product_id: String) -> Dictionary:
+	if not _world_market_state.has(product_id):
+		return {}
+	var entry_variant: Variant = _world_market_state.get(product_id, {})
+	if not (entry_variant is Dictionary):
+		return {}
+	var entry: Dictionary = entry_variant as Dictionary
+	return {
+		"id": product_id,
+		"display_name": String(entry.get("display_name", product_id)),
+		"current_price": float(entry.get("current_price", 0.0)),
+		"supply_index": float(entry.get("supply_index", 0.0)),
+		"demand_index": float(entry.get("demand_index", 0.0)),
+		"last_update": int(entry.get("last_update", 0)),
+	}
+
+func get_world_market_history(product_id: String) -> Array:
+	if not _world_market_state.has(product_id):
+		return []
+	var entry_variant: Variant = _world_market_state.get(product_id, {})
+	if not (entry_variant is Dictionary):
+		return []
+	var entry: Dictionary = entry_variant as Dictionary
+	var history_variant: Variant = entry.get("history", [])
+	if not (history_variant is Array):
+		return []
+	var history: Array = history_variant as Array
+	var copy: Array = []
+	for point_variant in history:
+		if point_variant is Dictionary:
+			copy.append(point_variant.duplicate(true))
+	return copy
 
 func get_build_catalog() -> Dictionary:
 	return _build_catalog.duplicate(true)
@@ -580,7 +690,147 @@ func sell_from_inventory(item_id: String, tons: float) -> bool:
 				"total_price": payout,
 				"unit": "t",
 			})
+			_register_world_market_sale(item_id, amount_to_sell)
 	return true
+
+func _initialize_world_market_state() -> void:
+	_world_market_state.clear()
+	var now := Time.get_ticks_msec()
+	for product_id in WORLD_MARKET_PRODUCTS.keys():
+		var config_variant: Variant = WORLD_MARKET_PRODUCTS.get(product_id, {})
+		var config: Dictionary = {}
+		if config_variant is Dictionary:
+			config = config_variant
+		var base_price: float = float(config.get("base_price", 10.0))
+		var base_supply: float = max(float(config.get("base_supply", 100.0)), 1.0)
+		var base_demand: float = max(float(config.get("base_demand", 100.0)), 1.0)
+		var entry: Dictionary = {
+			"id": product_id,
+			"display_name": _resolve_display_name(product_id),
+			"base_price": base_price,
+			"elasticity": max(float(config.get("elasticity", 0.5)), 0.01),
+			"volatility": max(float(config.get("volatility", 0.1)), 0.0),
+			"mean_reversion": clamp(float(config.get("mean_reversion", 0.1)), 0.0, 1.0),
+			"base_supply": base_supply,
+			"base_demand": base_demand,
+			"supply_index": base_supply,
+			"demand_index": base_demand,
+			"supply_impact": max(float(config.get("supply_impact", 5.0)), 0.0),
+			"demand_impact": max(float(config.get("demand_impact", 4.0)), 0.0),
+			"history": [],
+			"current_price": base_price,
+			"last_update": now,
+		}
+		_push_world_market_history(product_id, entry)
+		_world_market_state[product_id] = entry
+	_world_market_timer = _ensure_world_market_timer()
+	if _world_market_timer != null:
+		_world_market_timer.start()
+	world_market_updated.emit(get_world_market_overview())
+
+func _ensure_world_market_timer() -> Timer:
+	var timer: Timer = get_node_or_null("WorldMarketTimer") as Timer
+	if timer == null:
+		timer = Timer.new()
+		timer.name = "WorldMarketTimer"
+		timer.wait_time = WORLD_MARKET_UPDATE_INTERVAL_SECONDS
+		timer.one_shot = false
+		timer.autostart = false
+		add_child(timer)
+	else:
+		timer.wait_time = WORLD_MARKET_UPDATE_INTERVAL_SECONDS
+	var callable := Callable(self, "_on_world_market_timer_timeout")
+	if not timer.timeout.is_connected(callable):
+		timer.timeout.connect(callable)
+	return timer
+
+func _on_world_market_timer_timeout() -> void:
+	var changed: bool = false
+	for product_id in _world_market_state.keys():
+		if _simulate_world_market_entry(product_id):
+			changed = true
+	if changed:
+		world_market_updated.emit(get_world_market_overview())
+
+func _simulate_world_market_entry(product_id: String) -> bool:
+	var entry_variant: Variant = _world_market_state.get(product_id, {})
+	if not (entry_variant is Dictionary):
+		return false
+	var entry: Dictionary = entry_variant as Dictionary
+	var current_supply: float = float(entry.get("supply_index", entry.get("base_supply", 100.0)))
+	var current_demand: float = float(entry.get("demand_index", entry.get("base_demand", 100.0)))
+	var mean_reversion: float = clamp(float(entry.get("mean_reversion", 0.1)), 0.0, 1.0)
+	var target_supply: float = float(entry.get("base_supply", current_supply))
+	var target_demand: float = float(entry.get("base_demand", current_demand))
+	var new_supply: float = lerp(current_supply, target_supply, mean_reversion)
+	var new_demand: float = lerp(current_demand, target_demand, mean_reversion)
+	var volatility: float = max(float(entry.get("volatility", 0.0)), 0.0)
+	if volatility > 0.0:
+		new_supply += new_supply * _world_market_rng.randf_range(-volatility, volatility) * 0.2
+		new_demand += new_demand * _world_market_rng.randf_range(-volatility, volatility) * 0.2
+	new_supply = max(new_supply, 1.0)
+	new_demand = max(new_demand, 1.0)
+	var supply_delta: float = new_supply - current_supply
+	var demand_delta: float = new_demand - current_demand
+	return _apply_world_market_adjustment(product_id, supply_delta, demand_delta)
+
+func _apply_world_market_adjustment(product_id: String, supply_delta: float, demand_delta: float, record_history: bool = true) -> bool:
+	var entry_variant: Variant = _world_market_state.get(product_id, {})
+	if not (entry_variant is Dictionary):
+		return false
+	var entry: Dictionary = entry_variant as Dictionary
+	var new_supply: float = max(float(entry.get("supply_index", 1.0)) + supply_delta, 1.0)
+	var new_demand: float = max(float(entry.get("demand_index", 1.0)) + demand_delta, 1.0)
+	entry["supply_index"] = new_supply
+	entry["demand_index"] = new_demand
+	var old_price: float = float(entry.get("current_price", entry.get("base_price", 0.0)))
+	var new_price: float = _calculate_world_market_price(entry)
+	entry["current_price"] = new_price
+	entry["last_update"] = Time.get_ticks_msec()
+	if record_history:
+		_push_world_market_history(product_id, entry)
+	_world_market_state[product_id] = entry
+	return abs(new_price - old_price) >= 0.01 or record_history
+
+func _calculate_world_market_price(entry: Dictionary) -> float:
+	var base_price: float = float(entry.get("base_price", 10.0))
+	var elasticity: float = max(float(entry.get("elasticity", 0.5)), 0.01)
+	var supply: float = max(float(entry.get("supply_index", 1.0)), 1.0)
+	var demand: float = max(float(entry.get("demand_index", 1.0)), 1.0)
+	var ratio: float = demand / supply
+	var price: float = base_price * pow(ratio, elasticity)
+	var min_price: float = base_price * 0.35
+	var max_price: float = base_price * 2.5
+	return clamp(price, min_price, max_price)
+
+func _push_world_market_history(product_id: String, entry: Dictionary) -> void:
+	var history_variant: Variant = entry.get("history", [])
+	var history: Array = []
+	if history_variant is Array:
+		history = history_variant as Array
+	var point: Dictionary = {
+		"timestamp": Time.get_ticks_msec(),
+		"price": float(entry.get("current_price", entry.get("base_price", 0.0))),
+		"supply": float(entry.get("supply_index", entry.get("base_supply", 0.0))),
+		"demand": float(entry.get("demand_index", entry.get("base_demand", 0.0))),
+	}
+	history.append(point)
+	while history.size() > WORLD_MARKET_HISTORY_LIMIT:
+		history.pop_front()
+	entry["history"] = history
+
+func _register_world_market_sale(item_id: String, tons: float) -> void:
+	if tons <= 0.0:
+		return
+	if not _world_market_state.has(item_id):
+		return
+	var entry_variant: Variant = _world_market_state.get(item_id, {})
+	if not (entry_variant is Dictionary):
+		return
+	var entry: Dictionary = entry_variant as Dictionary
+	var impact: float = max(float(entry.get("supply_impact", 5.0)), 0.0)
+	_apply_world_market_adjustment(item_id, tons * impact, 0.0)
+	world_market_updated.emit(get_world_market_overview())
 
 func get_crop_ids() -> Array:
 	return CROP_CONFIG.keys()

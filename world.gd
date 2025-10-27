@@ -25,6 +25,8 @@ const DEFAULT_FIELD_MODEL_RELATIVE := Transform3D(
 	Vector3(0.0013673, -0.00009343, 0.01462)
 )
 
+const MIN_HALF_EXTENT := 0.25
+
 var _field_container: Node3D = null
 var _field_model_container: Node3D = null
 var _model_relative: Transform3D = DEFAULT_FIELD_MODEL_RELATIVE
@@ -130,6 +132,29 @@ func _compute_slot_position(index: int) -> Vector3:
 		grid_spacing.z * row
 	)
 	return grid_origin + offset
+
+func _variant_to_vector3(value: Variant, default_value: Vector3 = Vector3.ONE) -> Vector3:
+	if value is Vector3:
+		return value as Vector3
+	if value is Array and (value as Array).size() >= 3:
+		var arr: Array = value
+		return Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
+	return default_value
+
+func _compute_half_extents(size: Vector3) -> Vector3:
+	var half := Vector3(abs(size.x) * 0.5, abs(size.y) * 0.5, abs(size.z) * 0.5)
+	if half.x <= 0.0:
+		half.x = MIN_HALF_EXTENT
+	if half.y <= 0.0:
+		half.y = MIN_HALF_EXTENT
+	if half.z <= 0.0:
+		half.z = MIN_HALF_EXTENT
+	return half
+
+func _extract_definition_half_extents(definition: Dictionary) -> Vector3:
+	var size_variant: Variant = definition.get("size", Vector3.ONE)
+	var size: Vector3 = _variant_to_vector3(size_variant, Vector3.ONE)
+	return _compute_half_extents(size)
 
 func _update_model_reference() -> void:
 	_model_relative = DEFAULT_FIELD_MODEL_RELATIVE
@@ -441,13 +466,8 @@ func _create_build_mesh(definition: Dictionary, is_preview: bool) -> MeshInstanc
 	return mesh_instance
 
 func _get_build_height(definition: Dictionary) -> float:
-	var size_variant: Variant = definition.get("size", Vector3.ONE)
-	if size_variant is Vector3:
-		return max((size_variant as Vector3).y, 0.1)
-	if size_variant is Array and (size_variant as Array).size() >= 2:
-		var arr: Array = size_variant
-		return max(float(arr[1]), 0.1)
-	return 1.0
+	var size: Vector3 = _variant_to_vector3(definition.get("size", Vector3.ONE), Vector3.ONE)
+	return max(size.y, 0.1)
 
 func _project_to_ground(screen_pos: Vector2) -> Variant:
 	var viewport: Viewport = get_viewport()
@@ -466,12 +486,98 @@ func _project_to_ground(screen_pos: Vector2) -> Variant:
 	return origin + direction * t
 
 func _snap_build_position(position: Vector3, definition: Dictionary) -> Vector3:
-	var snap_value: float = float(definition.get("snap", 1.0))
-	if snap_value <= 0.0:
-		snap_value = 1.0
-	var snapped_x: float = round(position.x / snap_value) * snap_value
-	var snapped_z: float = round(position.z / snap_value) * snap_value
+	var snap_step: float = float(definition.get("snap", 1.0))
+	if snap_step <= 0.0:
+		snap_step = 1.0
+	var base_position := _snap_to_grid(position, snap_step)
+	return _apply_edge_snapping(position, base_position, definition, snap_step)
+
+func _snap_to_grid(position: Vector3, snap_step: float) -> Vector3:
+	var snapped_x: float = round(position.x / snap_step) * snap_step
+	var snapped_z: float = round(position.z / snap_step) * snap_step
 	return Vector3(snapped_x, 0.0, snapped_z)
+
+func _apply_edge_snapping(raw_position: Vector3, base_position: Vector3, definition: Dictionary, snap_step: float) -> Vector3:
+	var half_extents: Vector3 = _extract_definition_half_extents(definition)
+	var result: Vector3 = base_position
+	var x_threshold: float = max(0.35, min(half_extents.x, 1.5))
+	var z_threshold: float = max(0.35, min(half_extents.z, 1.5))
+	if snap_step > 0.0:
+		x_threshold = max(x_threshold, snap_step * 0.5)
+		z_threshold = max(z_threshold, snap_step * 0.5)
+	var best_x_delta: float = x_threshold
+	var best_z_delta: float = z_threshold
+	for target in _gather_snap_targets():
+		var target_position_variant: Variant = target.get("position", Vector3.ZERO)
+		var target_half_variant: Variant = target.get("half_extents", Vector3.ONE * 0.5)
+		if not (target_position_variant is Vector3) or not (target_half_variant is Vector3):
+			continue
+		var target_position: Vector3
+		var target_half: Vector3
+		target_position = target_position_variant
+		target_half = target_half_variant
+		var combined_half_z: float = target_half.z + half_extents.z
+		var z_distance: float = abs(raw_position.z - target_position.z)
+		if z_distance <= combined_half_z + z_threshold:
+			var candidate_x: float = target_position.x + target_half.x + half_extents.x
+			var delta_x: float = abs(raw_position.x - candidate_x)
+			if delta_x <= best_x_delta:
+				best_x_delta = delta_x
+				result.x = candidate_x
+			candidate_x = target_position.x - (target_half.x + half_extents.x)
+			delta_x = abs(raw_position.x - candidate_x)
+			if delta_x <= best_x_delta:
+				best_x_delta = delta_x
+				result.x = candidate_x
+		var combined_half_x: float = target_half.x + half_extents.x
+		var x_distance: float = abs(raw_position.x - target_position.x)
+		if x_distance <= combined_half_x + x_threshold:
+			var candidate_z: float = target_position.z + target_half.z + half_extents.z
+			var delta_z: float = abs(raw_position.z - candidate_z)
+			if delta_z <= best_z_delta:
+				best_z_delta = delta_z
+				result.z = candidate_z
+			candidate_z = target_position.z - (target_half.z + half_extents.z)
+			delta_z = abs(raw_position.z - candidate_z)
+			if delta_z <= best_z_delta:
+				best_z_delta = delta_z
+				result.z = candidate_z
+	return result
+
+func _gather_snap_targets() -> Array[Dictionary]:
+	var targets: Array[Dictionary] = []
+	if GameState and GameState.has_method("get_built_structures"):
+		var structures := GameState.get_built_structures()
+		for entry_variant in structures:
+			if not (entry_variant is Dictionary):
+				continue
+			var entry: Dictionary = entry_variant
+			var metadata_variant: Variant = entry.get("metadata", {})
+			if not (metadata_variant is Dictionary):
+				continue
+			var metadata: Dictionary = metadata_variant
+			var position_variant: Variant = metadata.get("position", metadata.get("global_position", null))
+			if not (position_variant is Vector3):
+				continue
+			var size_variant: Variant = entry.get("size", Vector3.ONE)
+			var half_extents: Vector3 = _compute_half_extents(_variant_to_vector3(size_variant, Vector3.ONE))
+			targets.append({
+				"position": position_variant as Vector3,
+				"half_extents": half_extents,
+			})
+	if _field_container:
+		var field_half := Vector3(abs(grid_spacing.x) * 0.5, MIN_HALF_EXTENT, abs(grid_spacing.z) * 0.5)
+		if field_half.x < MIN_HALF_EXTENT:
+			field_half.x = MIN_HALF_EXTENT
+		if field_half.z < MIN_HALF_EXTENT:
+			field_half.z = MIN_HALF_EXTENT
+		for child in _field_container.get_children():
+			if child is Node3D:
+				targets.append({
+					"position": (child as Node3D).global_position,
+					"half_extents": field_half,
+				})
+	return targets
 
 func _is_position_blocked(position: Vector3, definition: Dictionary) -> bool:
 	var containers: Array[Node3D] = []
@@ -487,14 +593,8 @@ func _is_position_blocked(position: Vector3, definition: Dictionary) -> bool:
 		containers.append(existing_field_container)
 	if containers.is_empty():
 		return false
-	var size_variant: Variant = definition.get("size", Vector3.ONE)
-	var size := Vector3.ONE
-	if size_variant is Vector3:
-		size = size_variant
-	elif size_variant is Array and (size_variant as Array).size() >= 3:
-		var arr: Array = size_variant
-		size = Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
-	var radius: float = max(max(size.x, size.z) * 0.5, 0.5)
+	var half_extents := _extract_definition_half_extents(definition)
+	var radius: float = max(max(half_extents.x, half_extents.z), 0.5)
 	for container in containers:
 		for child in container.get_children():
 			if child is Node3D:
