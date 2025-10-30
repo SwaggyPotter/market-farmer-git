@@ -1,6 +1,7 @@
-[gd_scene load_steps=3 format=3 uid="uid://bgmw7b1bh2kxg"]
+[gd_scene load_steps=4 format=3 uid="uid://bgmw7b1bh2kxg"]
 
 [ext_resource type="Script" uid="uid://265e75r0a4s1" path="res://benutzeroberfläche.gd" id="1_epa3y"]
+[ext_resource type="Script" path="res://world_market_chart.gd" id="2_hgjca"]
 
 [sub_resource type="Theme" id="Theme_epa3y"]
 
@@ -325,17 +326,23 @@ text = "Angebot: - | Nachfrage: -"
 [node name="UpdatedLabel" type="Label" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection"]
 text = "Aktualisiert: -"
 
-[node name="HistoryLabel" type="Label" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection"]
-text = "Preisverlauf"
+[node name="HistoryHeader" type="HBoxContainer" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
 
-[node name="HistoryScroll" type="ScrollContainer" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection"]
+[node name="HistoryLabel" type="Label" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/HistoryHeader"]
+text = "Preisverlauf"
+size_flags_horizontal = 3
+
+[node name="HistoryModeOption" type="OptionButton" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/HistoryHeader"]
+size_flags_horizontal = 1
+tooltip_text = "Darstellung wechseln"
+
+[node name="HistoryChart" type="Control" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection"]
 size_flags_horizontal = 3
 size_flags_vertical = 3
 custom_minimum_size = Vector2(0, 260)
-
-[node name="HistoryList" type="VBoxContainer" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/HistoryScroll"]
-size_flags_horizontal = 3
-theme_override_constants/separation = 4
+script = ExtResource("2_hgjca")
 
 [node name="WorldMarketCloseButton" type="Button" parent="WorldMarketPopup/WorldMarketMargin/WorldMarketVBox"]
 text = "Schliessen"

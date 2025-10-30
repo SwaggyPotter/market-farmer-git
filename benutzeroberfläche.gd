@@ -1,36 +1,39 @@
 extends Control
 
-const MENU_CANCEL_ID := 0
-const MENU_ACTION_PLANT := "plant"
-const MENU_ACTION_FERTILIZE := "fertilize"
-const FIELD_STATE_UNKNOWN := -1
-const FIELD_STATE_EMPTY := 0
-const FIELD_STATE_GROWING := 1
-const FIELD_STATE_READY := 2
-const CROP_MENU_ORDER := [
+const MENU_CANCEL_ID = 0
+const MENU_ACTION_PLANT = "plant"
+const MENU_ACTION_FERTILIZE = "fertilize"
+const FIELD_STATE_UNKNOWN = -1
+const FIELD_STATE_EMPTY = 0
+const FIELD_STATE_GROWING = 1
+const FIELD_STATE_READY = 2
+const CROP_MENU_ORDER = [
 	"wheat",
 	"potato",
 ]
-const DEFAULT_GROWTH_SECONDS := 10.0
-const CROP_TO_SEED := {
+const DEFAULT_GROWTH_SECONDS = 10.0
+const CROP_TO_SEED = {
 	"wheat": "wheat_seed",
 	"potato": "potato_seed",
 }
-const STORAGE_CATEGORY_ORDER := [
+const STORAGE_CATEGORY_ORDER = [
 	GameState.ITEM_CATEGORY_FERTILIZER,
 	GameState.ITEM_CATEGORY_SEEDS,
 	GameState.ITEM_CATEGORY_HARVESTED,
 ]
-const FARMER_STATUS_IDLE := "idle"
-const FARMER_STATUS_ASSIGNED := "assigned"
-const PERSONNEL_SELECTOR_NONE_LABEL := "Kein Feld"
-const BUILD_MENU_CATEGORY_ORDER := [
+const FARMER_STATUS_IDLE = "idle"
+const FARMER_STATUS_ASSIGNED = "assigned"
+const PERSONNEL_SELECTOR_NONE_LABEL = "Kein Feld"
+const BUILD_MENU_CATEGORY_ORDER = [
 	{"id": "field", "label": "Felder"},
 	{"id": "decor", "label": "Dekorationen"},
 	{"id": "road", "label": "Strassen"},
+	{"id": "production", "label": "Produktion"},
 	{"id": "power", "label": "Stromerzeugung"},
 	{"id": "irrigation", "label": "Bewaesserung"},
 ]
+
+const WORLD_MARKET_CHART_SCRIPT = preload("res://world_market_chart.gd")
 
 @onready var menu: PopupMenu = $PlantMenu
 @onready var money_label: Label = $WalletPanel/MoneyLabel
@@ -58,7 +61,8 @@ const BUILD_MENU_CATEGORY_ORDER := [
 @onready var world_market_price_label: Label = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/CurrentPriceLabel
 @onready var world_market_supply_label: Label = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/SupplyDemandLabel
 @onready var world_market_updated_label: Label = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/UpdatedLabel
-@onready var world_market_history_container: VBoxContainer = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/HistoryScroll/HistoryList
+@onready var world_market_history_mode: OptionButton = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/HistoryHeader/HistoryModeOption
+@onready var world_market_chart = $WorldMarketPopup/WorldMarketMargin/WorldMarketVBox/Content/DetailsSection/HistoryChart
 @onready var research_button: Button = $WalletPanel/ResearchButton
 @onready var research_popup: PopupPanel = $ResearchPopup
 @onready var research_entries_scroll: ScrollContainer = $ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll
@@ -126,6 +130,14 @@ func _ready():
 		world_market_clear_button.pressed.connect(_on_world_market_clear_pressed)
 	if world_market_list:
 		world_market_list.item_selected.connect(_on_world_market_item_selected)
+	if world_market_history_mode:
+		world_market_history_mode.clear()
+		world_market_history_mode.add_item("Linie")
+		world_market_history_mode.add_item("Kerzen")
+		world_market_history_mode.select(0)
+		world_market_history_mode.item_selected.connect(_on_world_market_history_mode_selected)
+	if world_market_chart:
+		world_market_chart.set_mode(WORLD_MARKET_CHART_SCRIPT.ChartMode.LINE)
 	if research_button:
 		research_button.pressed.connect(_on_research_button_pressed)
 	if research_close_button:
@@ -171,6 +183,8 @@ func _ready():
 		GameState.build_mode_changed.connect(_on_build_mode_changed)
 	if GameState.has_signal("build_catalog_changed"):
 		GameState.build_catalog_changed.connect(_on_build_catalog_changed)
+	if GameState.has_signal("build_constructed"):
+		GameState.build_constructed.connect(_on_build_constructed)
 	_refresh_build_menu()
 	_refresh_build_info_label()
 	if menu:
@@ -649,6 +663,41 @@ func _create_storage_harvest_row(item_id: String, amount: float) -> HBoxContaine
 	minus_button.focus_mode = Control.FOCUS_NONE
 	row.add_child(minus_button)
 
+	var seed_button := Button.new()
+	seed_button.text = "Zu Samen"
+	seed_button.focus_mode = Control.FOCUS_NONE
+	var can_convert := false
+	if GameState.has_method("can_convert_harvest_to_seeds"):
+		can_convert = GameState.can_convert_harvest_to_seeds(item_id)
+	var has_processing := false
+	if GameState.has_method("has_seed_processing"):
+		has_processing = GameState.has_seed_processing()
+	seed_button.disabled = not can_convert
+	var conversion_tooltip := ""
+	var recipe: Dictionary = {}
+	if GameState.has_method("get_seed_conversion_recipe"):
+		recipe = GameState.get_seed_conversion_recipe(item_id)
+	if not recipe.is_empty():
+		var seed_id := String(recipe.get("seed_id", ""))
+		var tons_per_seed := float(recipe.get("input_tons_per_seed", 0.0))
+		var ratio_text := _format_tons(tons_per_seed)
+		var seed_name := GameState.get_display_name(seed_id)
+		conversion_tooltip = "Verarbeitet %s t zu 1 %s." % [ratio_text, seed_name]
+	if not can_convert:
+		if not has_processing:
+			if conversion_tooltip.is_empty():
+				conversion_tooltip = "Benoetigt eine Samenproduktion."
+			else:
+				conversion_tooltip += "\nBenoetigt eine Samenproduktion."
+		else:
+			var lacking_text := "Nicht genug Ernte fuer eine Umwandlung."
+			if conversion_tooltip.is_empty():
+				conversion_tooltip = lacking_text
+			else:
+				conversion_tooltip += "\n%s" % lacking_text
+	seed_button.tooltip_text = conversion_tooltip
+	row.add_child(seed_button)
+
 	var sell_button := Button.new()
 	sell_button.text = "Verkaufen"
 	sell_button.focus_mode = Control.FOCUS_NONE
@@ -656,6 +705,7 @@ func _create_storage_harvest_row(item_id: String, amount: float) -> HBoxContaine
 
 	plus_button.pressed.connect(Callable(self, "_on_storage_adjust_pressed").bind(item_id, amount_input, 1.0))
 	minus_button.pressed.connect(Callable(self, "_on_storage_adjust_pressed").bind(item_id, amount_input, -1.0))
+	seed_button.pressed.connect(Callable(self, "_on_storage_convert_to_seeds_pressed").bind(item_id, amount_input))
 	sell_button.pressed.connect(Callable(self, "_on_storage_sell_pressed").bind(item_id, amount_input))
 	amount_input.text_submitted.connect(Callable(self, "_on_storage_sell_pressed").bind(item_id, amount_input))
 
@@ -708,6 +758,41 @@ func _on_storage_sell_pressed(item_id: String, input: LineEdit) -> void:
 		input.text = "0"
 	else:
 		input.text = _format_tons(amount_to_sell)
+
+func _on_storage_convert_to_seeds_pressed(item_id: String, input: LineEdit) -> void:
+	var requested: float = _parse_tons(input.text)
+	if requested <= 0.0:
+		input.text = "0"
+		return
+	if not GameState.has_method("convert_harvest_to_seeds"):
+		print("Samenverarbeitung ist aktuell nicht verfuegbar.")
+		return
+	var result_variant: Variant = GameState.convert_harvest_to_seeds(item_id, requested)
+	if not (result_variant is Dictionary):
+		print("Unerwartetes Ergebnis bei der Samenverarbeitung.")
+		return
+	var result: Dictionary = result_variant
+	if bool(result.get("success", false)):
+		input.text = "0"
+		var produced := int(result.get("produced", 0))
+		var seed_id := String(result.get("seed_id", ""))
+		if produced > 0 and not seed_id.is_empty():
+			print("Samenproduktion: %d %s hergestellt." % [produced, GameState.get_display_name(seed_id)])
+		return
+	var reason := String(result.get("reason", ""))
+	match reason:
+		"no_facility":
+			print("Benoetigt eine Samenproduktion, um Samen herzustellen.")
+		"insufficient_input":
+			print("Nicht genug Ernte vorhanden fuer die Samenproduktion.")
+		"invalid_amount":
+			print("Bitte gib eine Menge groesser 0 ein.")
+		_:
+			print("Samenproduktion fehlgeschlagen:", reason)
+	var available: float = 0.0
+	if GameState.has_method("get_storage_amount"):
+		available = GameState.get_storage_amount(item_id)
+	input.text = _format_tons(available)
 
 func _parse_tons(raw_value: String) -> float:
 	var value := raw_value.strip_edges()
@@ -940,37 +1025,16 @@ func _update_world_market_details(product_id: String) -> void:
 	_populate_world_market_history(history)
 
 func _populate_world_market_history(history: Array) -> void:
-	if world_market_history_container == null:
-		return
-	for child in world_market_history_container.get_children():
-		child.queue_free()
-	if history.is_empty():
-		var empty_label := Label.new()
-		empty_label.text = "Noch keine Preisverlaeufe."
-		world_market_history_container.add_child(empty_label)
-		return
-	var ordered: Array = history.duplicate()
-	ordered.reverse()
-	var added := 0
-	for point_variant in ordered:
-		if not (point_variant is Dictionary):
-			continue
-		var point: Dictionary = point_variant
-		var label := Label.new()
-		label.text = _format_world_market_history_entry(point)
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		world_market_history_container.add_child(label)
-		added += 1
-		if added >= 20:
-			break
+	if world_market_chart:
+		world_market_chart.set_history(history)
 
-func _format_world_market_history_entry(point: Dictionary) -> String:
-	var timestamp := int(point.get("timestamp", 0))
-	var price := float(point.get("price", 0.0))
-	var supply := float(point.get("supply", 0.0))
-	var demand := float(point.get("demand", 0.0))
-	var time_text := _format_world_market_timestamp(timestamp)
-	return "%s - %.2f (A: %.1f | N: %.1f)" % [time_text, price, supply, demand]
+func _on_world_market_history_mode_selected(index: int) -> void:
+	if world_market_chart == null:
+		return
+	var new_mode: int = WORLD_MARKET_CHART_SCRIPT.ChartMode.LINE
+	if index == 1:
+		new_mode = WORLD_MARKET_CHART_SCRIPT.ChartMode.CANDLE
+	world_market_chart.set_mode(new_mode)
 
 func _format_world_market_timestamp(timestamp: int) -> String:
 	if timestamp <= 0:
@@ -1731,6 +1795,9 @@ func _on_build_catalog_changed(_catalog: Dictionary) -> void:
 	_update_build_button_states()
 	_refresh_build_info_label()
 
+func _on_build_constructed(_build_id: String, _data: Dictionary) -> void:
+	_update_storage_view()
+
 func _refresh_build_info_label() -> void:
 	if build_info_label == null:
 		return
@@ -1783,4 +1850,12 @@ func _format_market_log_entry(entry: Dictionary) -> String:
 		return "%s kaufte %s %s fuer %d G%s" % [actor, amount_text, item_name, total_price, price_info]
 	if action == "sale":
 		return "%s verkaufte %s %s fuer %d G%s" % [actor, amount_text, item_name, total_price, price_info]
+	if action == "processing":
+		var source_item_id := String(entry.get("source_item_id", ""))
+		var source_name := GameState.get_display_name(source_item_id)
+		var source_amount := float(entry.get("source_amount", 0.0))
+		var source_text := ""
+		if not source_item_id.is_empty():
+			source_text = " aus %s t %s" % [_format_tons(source_amount), source_name]
+		return "%s stellte %s %s%s her" % [actor, amount_text, item_name, source_text]
 	return "%s handelte %s %s fuer %d G%s" % [actor, amount_text, item_name, total_price, price_info]

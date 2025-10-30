@@ -202,6 +202,16 @@ const BUILD_CATALOG := {
 		"size": Vector3(2.5, 8.0, 2.5),
 		"color": Color(0.65, 0.6, 0.5),
 	},
+	"production_seed_workshop": {
+		"label": "Samenproduktion",
+		"description": "Ermoeglicht die Verarbeitung eigener Ernte zu neuen Saatgut-Einheiten.",
+		"cost": 90,
+		"category": "production",
+		"category_label": "Produktion",
+		"shape": "box",
+		"size": Vector3(3.0, 2.2, 3.0),
+		"color": Color(0.6, 0.55, 0.4),
+	},
 }
 const RESEARCH_TYPE_YIELD := "yield"
 const RESEARCH_TYPE_SPEED := "speed"
@@ -264,6 +274,18 @@ const CROP_CONFIG := {
 	},
 }
 
+const SEED_PROCESSING_RECIPES := {
+	"wheat": {
+		"seed_id": "wheat_seed",
+		"input_tons_per_seed": 0.1,
+	},
+	"potato": {
+		"seed_id": "potato_seed",
+		"input_tons_per_seed": 0.1,
+	},
+}
+const SEED_PROCESSING_MINIMUM_TONS := 0.0001
+
 var money: int:
 	get:
 		return _money
@@ -291,6 +313,7 @@ var _build_catalog: Dictionary = BUILD_CATALOG.duplicate(true)
 var _field_growth_info: Dictionary = {}
 var _active_build_mode: String = ""
 var _built_structures: Array = []
+var _seed_processing_buildings: int = 0
 
 func _ready() -> void:
 	_rent_timer = _ensure_rent_timer()
@@ -509,8 +532,14 @@ func register_build_instance(build_id: String, metadata: Dictionary = {}) -> Dic
 		entry["size"] = definition.get("size", Vector3.ONE)
 		entry["color"] = definition.get("color", Color.WHITE)
 	_built_structures.append(entry)
+	_apply_build_effects(build_id, entry)
 	build_constructed.emit(build_id, entry.duplicate(true))
 	return entry.duplicate(true)
+
+func _apply_build_effects(build_id: String, _entry: Dictionary) -> void:
+	match build_id:
+		"production_seed_workshop":
+			_seed_processing_buildings += 1
 
 func get_built_structures() -> Array:
 	var list: Array = []
@@ -520,6 +549,107 @@ func get_built_structures() -> Array:
 		var entry_dict: Dictionary = entry_variant
 		list.append(entry_dict.duplicate(true))
 	return list
+
+func get_seed_processing_count() -> int:
+	return max(_seed_processing_buildings, 0)
+
+func has_seed_processing() -> bool:
+	return get_seed_processing_count() > 0
+
+func get_seed_conversion_recipe(harvest_id: String) -> Dictionary:
+	if not SEED_PROCESSING_RECIPES.has(harvest_id):
+		return {}
+	var entry_variant: Variant = SEED_PROCESSING_RECIPES.get(harvest_id, {})
+	if not (entry_variant is Dictionary):
+		return {}
+	var entry: Dictionary = entry_variant
+	var seed_id := String(entry.get("seed_id", ""))
+	var tons_per_seed := float(entry.get("input_tons_per_seed", 0.0))
+	if tons_per_seed <= 0.0:
+		tons_per_seed = SEED_PROCESSING_MINIMUM_TONS
+	return {
+		"harvest_id": harvest_id,
+		"seed_id": seed_id,
+		"input_tons_per_seed": tons_per_seed,
+	}
+
+func can_convert_harvest_to_seeds(harvest_id: String) -> bool:
+	if not has_seed_processing():
+		return false
+	var recipe := get_seed_conversion_recipe(harvest_id)
+	if recipe.is_empty():
+		return false
+	if not _storage.has(harvest_id):
+		return false
+	var available: float = float(_storage.get(harvest_id, 0.0))
+	var tons_per_seed := float(recipe.get("input_tons_per_seed", SEED_PROCESSING_MINIMUM_TONS))
+	return available + SEED_PROCESSING_MINIMUM_TONS >= tons_per_seed
+
+func convert_harvest_to_seeds(harvest_id: String, tons: float) -> Dictionary:
+	var result := {
+		"success": false,
+		"seed_id": "",
+		"produced": 0,
+		"consumed": 0.0,
+		"reason": "",
+	}
+	if tons <= 0.0:
+		result["reason"] = "invalid_amount"
+		return result
+	if not has_seed_processing():
+		result["reason"] = "no_facility"
+		return result
+	var recipe := get_seed_conversion_recipe(harvest_id)
+	if recipe.is_empty():
+		result["reason"] = "no_recipe"
+		return result
+	if not _storage.has(harvest_id):
+		result["reason"] = "no_inventory"
+		return result
+	var available: float = float(_storage.get(harvest_id, 0.0))
+	if available <= SEED_PROCESSING_MINIMUM_TONS:
+		result["reason"] = "insufficient_input"
+		return result
+	var request := clampf(tons, 0.0, available)
+	if request <= 0.0:
+		result["reason"] = "insufficient_input"
+		return result
+	var tons_per_seed := float(recipe.get("input_tons_per_seed", SEED_PROCESSING_MINIMUM_TONS))
+	if tons_per_seed <= 0.0:
+		tons_per_seed = SEED_PROCESSING_MINIMUM_TONS
+	var possible: int = int(floor((request + SEED_PROCESSING_MINIMUM_TONS) / tons_per_seed))
+	if possible <= 0:
+		result["reason"] = "insufficient_input"
+		return result
+	var consumed: float = float(possible) * tons_per_seed
+	consumed = min(consumed, available)
+	var remaining: float = available - consumed
+	if remaining <= SEED_PROCESSING_MINIMUM_TONS:
+		_storage.erase(harvest_id)
+	else:
+		_storage[harvest_id] = remaining
+	inventory_changed.emit(_storage.duplicate(true))
+	var seed_id := String(recipe.get("seed_id", ""))
+	if not seed_id.is_empty():
+		var current: int = int(_supplies.get(seed_id, 0))
+		_supplies[seed_id] = current + possible
+		supplies_changed.emit(_supplies.duplicate(true))
+		result["seed_id"] = seed_id
+	var log_entry := {
+		"type": "processing",
+		"actor": "Samenproduktion",
+		"item_id": seed_id,
+		"amount": float(possible),
+		"unit": "Stk",
+		"source_item_id": harvest_id,
+		"source_amount": consumed,
+	}
+	_append_market_log(log_entry)
+	result["success"] = true
+	result["produced"] = possible
+	result["consumed"] = consumed
+	result["remaining"] = max(remaining, 0.0)
+	return result
 
 func get_fertilizer_definition(item_id: String) -> Dictionary:
 	if not FERTILIZER_DEFINITIONS.has(item_id):
