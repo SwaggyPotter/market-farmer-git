@@ -389,6 +389,50 @@ size_flags_vertical = 3
 size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
+[node name="NewProductsSection" type="VBoxContainer" parent="ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="NewProductsButton" type="Button" parent="ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer/NewProductsSection"]
+text = "Neue Produkte erforschen"
+size_flags_horizontal = 3
+toggle_mode = true
+button_pressed = false
+
+[node name="NewProductsGrid" type="GridContainer" parent="ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer/NewProductsSection"]
+columns = 3
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 12
+visible = false
+
+[node name="NewProductPlaceholder1" type="Panel" parent="ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer/NewProductsSection/NewProductsGrid"]
+custom_minimum_size = Vector2(120, 120)
+
+[node name="NewProductPlaceholder2" type="Panel" parent="ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer/NewProductsSection/NewProductsGrid"]
+custom_minimum_size = Vector2(120, 120)
+
+[node name="NewProductPlaceholder3" type="Panel" parent="ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer/NewProductsSection/NewProductsGrid"]
+custom_minimum_size = Vector2(120, 120)
+
+[node name="NewProductPlaceholder4" type="Panel" parent="ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer/NewProductsSection/NewProductsGrid"]
+custom_minimum_size = Vector2(120, 120)
+
+[node name="ImprovePlantsSection" type="VBoxContainer" parent="ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="ImprovePlantsButton" type="Button" parent="ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer/ImprovePlantsSection"]
+text = "Bekannte Pflanzen verbessern"
+size_flags_horizontal = 3
+toggle_mode = true
+button_pressed = false
+
+[node name="ImproveEntries" type="VBoxContainer" parent="ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer/ImprovePlantsSection"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+visible = false
+
 [node name="CloseButton" type="Button" parent="ResearchPopup/MarginContainer/VBoxContainer"]
 text = "Schliessen"
 text_alignment = 1

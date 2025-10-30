@@ -66,7 +66,12 @@ const WORLD_MARKET_CHART_SCRIPT = preload("res://world_market_chart.gd")
 @onready var research_button: Button = $WalletPanel/ResearchButton
 @onready var research_popup: PopupPanel = $ResearchPopup
 @onready var research_entries_scroll: ScrollContainer = $ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll
-@onready var research_entries_container: VBoxContainer = $ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer
+@onready var research_new_products_section: VBoxContainer = $ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer/NewProductsSection
+@onready var research_new_products_button: Button = $ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer/NewProductsSection/NewProductsButton
+@onready var research_new_products_grid: GridContainer = $ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer/NewProductsSection/NewProductsGrid
+@onready var research_improve_section: VBoxContainer = $ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer/ImprovePlantsSection
+@onready var research_improve_button: Button = $ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer/ImprovePlantsSection/ImprovePlantsButton
+@onready var research_improve_entries_container: VBoxContainer = $ResearchPopup/MarginContainer/VBoxContainer/EntriesScroll/EntriesContainer/ImprovePlantsSection/ImproveEntries
 @onready var research_empty_label: Label = $ResearchPopup/MarginContainer/VBoxContainer/EmptyLabel
 @onready var research_close_button: Button = $ResearchPopup/MarginContainer/VBoxContainer/CloseButton
 @onready var personnel_button: Button = $WalletPanel/PersonnelButton
@@ -93,6 +98,9 @@ var _world_market_selection: String = ""
 var _world_market_overview: Dictionary = {}
 var _latest_research_state: Dictionary = {}
 var _research_rows: Dictionary = {}
+var _research_new_products_expanded: bool = false
+var _research_improve_expanded: bool = false
+var _research_improve_has_entries: bool = false
 var _latest_farmers: Array = []
 var _known_field_names: Array = []
 var _personnel_refreshing: bool = false
@@ -142,6 +150,10 @@ func _ready():
 		research_button.pressed.connect(_on_research_button_pressed)
 	if research_close_button:
 		research_close_button.pressed.connect(_on_research_close_pressed)
+	if research_new_products_button:
+		research_new_products_button.toggled.connect(_on_research_new_products_button_toggled)
+	if research_improve_button:
+		research_improve_button.toggled.connect(_on_research_improve_button_toggled)
 	if personnel_button:
 		personnel_button.pressed.connect(_on_personnel_button_pressed)
 	if personnel_hire_button:
@@ -1099,9 +1111,9 @@ func _on_world_market_item_selected(index: int) -> void:
 	_update_world_market_details(_world_market_selection)
 
 func _setup_research_ui() -> void:
-	if research_entries_container == null or research_empty_label == null:
+	if research_improve_entries_container == null or research_empty_label == null:
 		return
-	for child in research_entries_container.get_children():
+	for child in research_improve_entries_container.get_children():
 		child.queue_free()
 	_research_rows.clear()
 	var crop_ids: Array = []
@@ -1155,17 +1167,60 @@ func _setup_research_ui() -> void:
 		if not first_section:
 			var separator := HSeparator.new()
 			separator.name = "ResearchSeparator_%s" % crop_id
-			research_entries_container.add_child(separator)
+			research_improve_entries_container.add_child(separator)
 		first_section = false
-		research_entries_container.add_child(section)
+		research_improve_entries_container.add_child(section)
 		added = true
-	if research_entries_container:
-		research_entries_container.visible = added
+	if research_new_products_section:
+		research_new_products_section.visible = true
+	if research_improve_section:
+		research_improve_section.visible = true
 	if research_entries_scroll:
-		research_entries_scroll.visible = added
+		research_entries_scroll.visible = true
+	_research_improve_has_entries = added
+	if not _research_improve_has_entries:
+		_research_improve_expanded = false
+	_update_research_category_visibility()
+	_update_research_category_buttons()
 	if research_empty_label:
 		research_empty_label.visible = not added
 	_update_research_rows()
+
+func _update_research_category_visibility() -> void:
+	if research_new_products_grid:
+		research_new_products_grid.visible = _research_new_products_expanded
+	if research_improve_entries_container:
+		research_improve_entries_container.visible = _research_improve_expanded and _research_improve_has_entries
+
+func _update_research_category_buttons() -> void:
+	if research_new_products_button:
+		research_new_products_button.set_pressed_no_signal(_research_new_products_expanded)
+		var new_products_prefix := "[-]" if _research_new_products_expanded else "[+]"
+		research_new_products_button.text = "%s Neue Produkte erforschen" % new_products_prefix
+	if research_improve_button:
+		var effective_expanded := _research_improve_expanded and _research_improve_has_entries
+		research_improve_button.set_pressed_no_signal(effective_expanded)
+		var improve_prefix := "[-]" if effective_expanded else "[+]"
+		research_improve_button.text = "%s Bekannte Pflanzen verbessern" % improve_prefix
+		research_improve_button.disabled = not _research_improve_has_entries
+
+func _set_research_new_products_expanded(expanded: bool) -> void:
+	_research_new_products_expanded = expanded
+	_update_research_category_visibility()
+	_update_research_category_buttons()
+
+func _set_research_improve_expanded(expanded: bool) -> void:
+	if not _research_improve_has_entries:
+		expanded = false
+	_research_improve_expanded = expanded
+	_update_research_category_visibility()
+	_update_research_category_buttons()
+
+func _on_research_new_products_button_toggled(pressed: bool) -> void:
+	_set_research_new_products_expanded(pressed)
+
+func _on_research_improve_button_toggled(pressed: bool) -> void:
+	_set_research_improve_expanded(pressed)
 
 func _create_research_entry(crop_id: String, research_type: String) -> Dictionary:
 	if crop_id.is_empty() or research_type.is_empty():
@@ -1280,6 +1335,8 @@ func _on_research_button_pressed() -> void:
 	if research_popup:
 		_update_research_rows()
 		research_popup.popup_centered_ratio(0.8)
+	_update_research_category_buttons()
+	_update_research_category_visibility()
 
 func _on_research_close_pressed() -> void:
 	if research_popup:
