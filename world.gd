@@ -486,6 +486,9 @@ func _project_to_ground(screen_pos: Vector2) -> Variant:
 	return origin + direction * t
 
 func _snap_build_position(position: Vector3, definition: Dictionary) -> Vector3:
+	var build_type := String(definition.get("build_type", ""))
+	if build_type == "field":
+		return _snap_field_position(position, definition)
 	var snap_step: float = float(definition.get("snap", 1.0))
 	if snap_step <= 0.0:
 		snap_step = 1.0
@@ -496,6 +499,29 @@ func _snap_to_grid(position: Vector3, snap_step: float) -> Vector3:
 	var snapped_x: float = round(position.x / snap_step) * snap_step
 	var snapped_z: float = round(position.z / snap_step) * snap_step
 	return Vector3(snapped_x, 0.0, snapped_z)
+
+func _snap_field_position(position: Vector3, definition: Dictionary) -> Vector3:
+	var field_count: int = get_field_count()
+	var fallback_step: float = float(definition.get("snap", 1.0))
+	if fallback_step <= 0.0:
+		fallback_step = 1.0
+	if field_count <= 0:
+		return _snap_to_grid(position, fallback_step)
+	var spacing_x: float = abs(grid_spacing.x)
+	var spacing_z: float = abs(grid_spacing.z)
+	if spacing_x <= 0.0001:
+		spacing_x = fallback_step
+	if spacing_z <= 0.0001:
+		spacing_z = fallback_step
+	var origin: Vector3 = grid_origin
+	var reference_field: Node3D = _get_field_at(0)
+	if reference_field != null:
+		origin = reference_field.global_position
+	var relative: Vector3 = position - origin
+	var snapped_x: float = round(relative.x / spacing_x) * spacing_x
+	var snapped_z: float = round(relative.z / spacing_z) * spacing_z
+	var result: Vector3 = Vector3(origin.x + snapped_x, 0.0, origin.z + snapped_z)
+	return result
 
 func _apply_edge_snapping(raw_position: Vector3, base_position: Vector3, definition: Dictionary, snap_step: float) -> Vector3:
 	var half_extents: Vector3 = _extract_definition_half_extents(definition)
@@ -702,8 +728,11 @@ func _place_field_build(definition: Dictionary) -> Dictionary:
 	field.position = Vector3.ZERO
 	field.rotation = Vector3.ZERO
 	field.scale = Vector3.ONE
+	var had_fields_before := get_field_count() > 0
 	container.add_child(field)
 	field.global_position = Vector3(_preview_position.x, 0.0, _preview_position.z)
+	if not had_fields_before:
+		grid_origin = field.global_position
 	if _ensure_field_model_container():
 		_update_model_reference()
 		_align_existing_models()
