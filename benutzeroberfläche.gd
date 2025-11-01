@@ -274,18 +274,31 @@ func _handle_menu_plant(metadata: Dictionary) -> bool:
 	var crop_id := String(metadata.get("crop_id", ""))
 	if crop_id.is_empty():
 		return false
-	var state := _resolve_field_state(current_tile)
-	if state != FIELD_STATE_EMPTY:
-		print("Feld ist nicht frei fuer Aussaat:", current_tile.name)
+	var connected_tiles := _resolve_connected_tiles(current_tile)
+	var plantable_tiles: Array = []
+	for tile in connected_tiles:
+		if tile == null or not is_instance_valid(tile):
+			continue
+		var tile_state := _resolve_field_state(tile)
+		if tile_state != FIELD_STATE_EMPTY:
+			print("Verbundene Felder muessen frei sein fuer die Aussaat (z. B. %s)." % tile.name)
+			return false
+		plantable_tiles.append(tile)
+	if plantable_tiles.is_empty():
+		print("Keine verfuegbaren Felder fuer die Aussaat gefunden.")
 		return false
 	var seed_id := String(metadata.get("seed_id", ""))
 	if seed_id.is_empty():
 		seed_id = _get_seed_id_for_crop(crop_id)
+	var required_seeds := plantable_tiles.size()
 	if not seed_id.is_empty():
-		if not GameState.has_supply(seed_id):
-			print("Es sind keine %s verfuegbar. Bitte kaufe Samen im Markt." % GameState.get_display_name(seed_id))
+		if not GameState.has_supply(seed_id, required_seeds):
+			print("Es sind nicht genug %s verfuegbar (%d benoetigt)." % [
+				GameState.get_display_name(seed_id),
+				required_seeds,
+			])
 			return false
-		if not GameState.consume_supply(seed_id):
+		if not GameState.consume_supply(seed_id, required_seeds):
 			print("Fehler beim Verbrauchen von %s." % GameState.get_display_name(seed_id))
 			return false
 	var growth_seconds: float = DEFAULT_GROWTH_SECONDS
@@ -295,7 +308,8 @@ func _handle_menu_plant(metadata: Dictionary) -> bool:
 		growth_seconds = GameState.get_crop_base_growth_time(crop_id)
 	if growth_seconds <= 0.0:
 		growth_seconds = DEFAULT_GROWTH_SECONDS
-	current_tile.call_deferred("start_growth", crop_id, growth_seconds)
+	for tile in plantable_tiles:
+		tile.call_deferred("start_growth", crop_id, growth_seconds)
 	return true
 
 func _handle_menu_fertilize(metadata: Dictionary) -> bool:
@@ -328,6 +342,25 @@ func _handle_menu_fertilize(metadata: Dictionary) -> bool:
 		print("Duenger konnte nicht angewendet werden auf", current_tile.name)
 		return false
 	return true
+
+func _resolve_connected_tiles(tile: Node) -> Array:
+	if tile == null:
+		return []
+	var resolved: Array = []
+	if tile.has_method("get_connected_fields"):
+		var result_variant: Variant = tile.call("get_connected_fields")
+		if result_variant is Array:
+			for entry in result_variant:
+				if entry == null or not is_instance_valid(entry):
+					continue
+				if resolved.has(entry):
+					continue
+				resolved.append(entry)
+	if resolved.is_empty():
+		resolved.append(tile)
+	elif not resolved.has(tile):
+		resolved.insert(0, tile)
+	return resolved
 
 func _close_menu() -> void:
 	if menu:

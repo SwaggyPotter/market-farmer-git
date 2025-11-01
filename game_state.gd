@@ -120,6 +120,7 @@ const BUILD_CATALOG := {
 		"category_label": "Strassen",
 		"shape": "box",
 		"size": Vector3(1.0, 0.15, 1.0),
+		"build_type": "road",
 		"color": Color(0.2, 0.2, 0.2),
 	},
 	"road_concrete": {
@@ -130,6 +131,7 @@ const BUILD_CATALOG := {
 		"category_label": "Strassen",
 		"shape": "box",
 		"size": Vector3(1.0, 0.2, 1.0),
+		"build_type": "road",
 		"color": Color(0.35, 0.35, 0.4),
 	},
 	"road_dirt": {
@@ -140,6 +142,7 @@ const BUILD_CATALOG := {
 		"category_label": "Strassen",
 		"shape": "box",
 		"size": Vector3(1.0, 0.1, 1.0),
+		"build_type": "road",
 		"color": Color(0.4, 0.32, 0.2),
 	},
 	"decor_planter": {

@@ -29,6 +29,7 @@ const PROGRESS_BAR_LABEL_OFFSET := Vector3(0.0, 0.18, 0.0)
 const PROGRESS_BAR_BACK_COLOR := Color(0.05, 0.05, 0.05, 0.7)
 const PROGRESS_BAR_FILL_COLOR := Color(0.2, 0.75, 0.15, 0.9)
 const PROGRESS_BAR_READY_COLOR := Color(0.9, 0.8, 0.25, 0.95)
+const CONTACT_TOLERANCE := 0.05
 
 enum FieldState { EMPTY, GROWING, READY }
 
@@ -57,6 +58,7 @@ var _progress_fill: MeshInstance3D = null
 var _progress_label: Label3D = null
 
 func _ready():
+	add_to_group("field_tile")
 	body.input_event.connect(_on_input_event)
 	if GameState.has_method("register_field"):
 		GameState.register_field(self)
@@ -78,12 +80,118 @@ func _on_input_event(_camera, event, _position, _normal, _shape_idx):
 				print("Feld", name, "wächst noch:", crop_type, "(Rest:", "%.2f" % growth_timer.time_left, "s)")
 				get_tree().call_group("ui", "open_for_tile", self, event.position)
 			FieldState.READY:
-				_harvest()
+				_harvest_connected_group()
 			_:
 				print("Unbekannter Feldstatus bei Klick:", state)
 
 func get_field_state() -> int:
 	return state
+
+func get_collision_half_extents() -> Vector2:
+	return _compute_collision_half_extents()
+
+func get_connected_fields(include_self: bool = true) -> Array[Node3D]:
+	var fallback: Array[Node3D] = []
+	if include_self:
+		fallback.append(self)
+	var tree := get_tree()
+	if tree == null:
+		return fallback
+	var candidates: Array = tree.get_nodes_in_group("field_tile")
+	if candidates.is_empty():
+		return fallback
+	var extent_cache: Dictionary = _build_extent_cache(candidates)
+	var visited: Dictionary = {}
+	var stack: Array[Node3D] = []
+	stack.append(self)
+	var cluster: Array[Node3D] = []
+	while not stack.is_empty():
+		var current: Node3D = stack.pop_back()
+		if current == null or visited.has(current):
+			continue
+		if not is_instance_valid(current):
+			continue
+		visited[current] = true
+		if include_self or current != self:
+			cluster.append(current)
+		elif current == self and include_self:
+			cluster.append(current)
+		var neighbors: Array[Node3D] = _find_touching_fields(current, candidates, extent_cache)
+		for neighbor in neighbors:
+			if visited.has(neighbor):
+				continue
+			stack.append(neighbor)
+	if include_self and not cluster.has(self):
+		cluster.insert(0, self)
+	elif not include_self:
+		cluster.erase(self)
+	return cluster
+
+func _build_extent_cache(candidates: Array) -> Dictionary:
+	var cache: Dictionary = {}
+	for candidate in candidates:
+		if candidate == null or not is_instance_valid(candidate):
+			continue
+		var node3d := candidate as Node3D
+		if node3d == null:
+			continue
+		var extents: Variant = Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
+		if candidate.has_method("get_collision_half_extents"):
+			extents = candidate.call("get_collision_half_extents")
+		if extents is Vector2:
+			cache[node3d] = extents
+		else:
+			cache[node3d] = Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
+	return cache
+
+func _find_touching_fields(field_node: Node3D, candidates: Array, extent_cache: Dictionary) -> Array[Node3D]:
+	var result: Array[Node3D] = []
+	if field_node == null or not is_instance_valid(field_node):
+		return result
+	var field_extents: Vector2 = Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
+	if extent_cache.has(field_node):
+		field_extents = extent_cache[field_node] as Vector2
+	var origin: Vector3 = field_node.global_transform.origin
+	for candidate_raw in candidates:
+		var candidate := candidate_raw as Node3D
+		if candidate == null or candidate == field_node:
+			continue
+		if not is_instance_valid(candidate):
+			continue
+		if not extent_cache.has(candidate):
+			continue
+		var candidate_extents: Vector2 = extent_cache[candidate] as Vector2
+		var other_origin: Vector3 = candidate.global_transform.origin
+		if _fields_in_contact(origin, field_extents, other_origin, candidate_extents):
+			result.append(candidate)
+	return result
+
+func _fields_in_contact(origin_a: Vector3, half_a: Vector2, origin_b: Vector3, half_b: Vector2) -> bool:
+	var dx: float = abs(origin_a.x - origin_b.x)
+	var dz: float = abs(origin_a.z - origin_b.z)
+	return dx <= (half_a.x + half_b.x + CONTACT_TOLERANCE) and dz <= (half_a.y + half_b.y + CONTACT_TOLERANCE)
+
+func _compute_collision_half_extents() -> Vector2:
+	var spacing: Vector2 = _get_effective_world_spacing()
+	var scale: Vector3 = global_transform.basis.get_scale()
+	var half_x: float = max(TILE_SIZE * 0.5, spacing.x * 0.5) * max(abs(scale.x), 0.0001)
+	var half_z: float = max(TILE_SIZE * 0.5, spacing.y * 0.5) * max(abs(scale.z), 0.0001)
+	return Vector2(half_x, half_z)
+
+func _get_effective_world_spacing() -> Vector2:
+	var world: Node = _get_field_manager()
+	if world != null:
+		var spacing_variant: Variant = world.get("grid_spacing")
+		if spacing_variant is Vector3:
+			var spacing_vec: Vector3 = spacing_variant as Vector3
+			return Vector2(max(abs(spacing_vec.x), TILE_SIZE), max(abs(spacing_vec.z), TILE_SIZE))
+	return Vector2(TILE_SIZE, TILE_SIZE)
+
+func _get_field_manager() -> Node:
+	var tree := get_tree()
+	if tree == null:
+		return null
+	return tree.get_first_node_in_group("field_manager")
 
 func can_apply_fertilizer(_fertilizer_id: String = "") -> bool:
 	return state == FieldState.GROWING
@@ -195,7 +303,7 @@ func _ensure_crop_container() -> Node3D:
 	return container
 
 func _ensure_progress_bar() -> Node3D:
-	var root := get_node_or_null("ProgressBar")
+	var root: Node3D = get_node_or_null("ProgressBar") as Node3D
 	var parent_scale := scale
 	var safe_scale := Vector3(
 		parent_scale.x if abs(parent_scale.x) > 0.0001 else 1.0,
@@ -207,7 +315,7 @@ func _ensure_progress_bar() -> Node3D:
 		root.name = "ProgressBar"
 		root.position = Vector3(0.0, PROGRESS_BAR_HEIGHT, 0.0)
 		add_child(root)
-	var background := root.get_node_or_null("Background") as MeshInstance3D
+	var background: MeshInstance3D = root.get_node_or_null("Background") as MeshInstance3D
 	if background == null:
 		background = MeshInstance3D.new()
 		background.name = "Background"
@@ -217,7 +325,7 @@ func _ensure_progress_bar() -> Node3D:
 		root.add_child(background)
 	background.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	background.position = Vector3.ZERO
-	var fill := root.get_node_or_null("Fill") as MeshInstance3D
+	var fill: MeshInstance3D = root.get_node_or_null("Fill") as MeshInstance3D
 	if fill == null:
 		fill = MeshInstance3D.new()
 		fill.name = "Fill"
@@ -227,7 +335,7 @@ func _ensure_progress_bar() -> Node3D:
 		root.add_child(fill)
 	fill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	fill.position = Vector3(0.0, 0.0, -0.001)
-	var time_label := root.get_node_or_null("TimeLabel") as Label3D
+	var time_label: Label3D = root.get_node_or_null("TimeLabel") as Label3D
 	if time_label == null:
 		time_label = Label3D.new()
 		time_label.name = "TimeLabel"
@@ -238,22 +346,18 @@ func _ensure_progress_bar() -> Node3D:
 		time_label.text = "00:00"
 		time_label.pixel_size = 0.015
 		root.add_child(time_label)
-	if background.material_override == null:
-		var back_material := StandardMaterial3D.new()
-		back_material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-		back_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		back_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		back_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-		back_material.albedo_color = PROGRESS_BAR_BACK_COLOR
-		background.material_override = back_material
-	if fill.material_override == null:
-		var fill_material := StandardMaterial3D.new()
-		fill_material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-		fill_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		fill_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		fill_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-		fill_material.albedo_color = PROGRESS_BAR_FILL_COLOR
-		fill.material_override = fill_material
+	var back_material: StandardMaterial3D = _get_or_create_standard_material(background)
+	back_material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	back_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	back_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	back_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	back_material.albedo_color = PROGRESS_BAR_BACK_COLOR
+	var fill_material: StandardMaterial3D = _get_or_create_standard_material(fill)
+	fill_material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	fill_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fill_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fill_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	fill_material.albedo_color = PROGRESS_BAR_FILL_COLOR
 	root.scale = Vector3(
 		1.0 / safe_scale.x,
 		1.0 / safe_scale.y,
@@ -265,6 +369,16 @@ func _ensure_progress_bar() -> Node3D:
 	_progress_label = time_label
 	root.visible = false
 	return root
+
+func _get_or_create_standard_material(target: MeshInstance3D) -> StandardMaterial3D:
+	if target == null:
+		return StandardMaterial3D.new()
+	var current: Material = target.material_override
+	if current is StandardMaterial3D:
+		return current as StandardMaterial3D
+	var created := StandardMaterial3D.new()
+	target.material_override = created
+	return created
 
 func _update_visual():
 	# hier gibt es garantiert ein Mesh & Material
@@ -628,3 +742,38 @@ func _format_time_remaining(seconds_left: float) -> String:
 	if minutes >= 99:
 		return "%d:--" % minutes
 	return "%02d:%02d" % [minutes, seconds]
+
+func _collect_connected_ready_fields() -> Array:
+	var ready_fields: Array = []
+	for field_node in get_connected_fields(true):
+		if field_node == null or not is_instance_valid(field_node):
+			continue
+		var field_state := int(field_node.call("get_field_state"))
+		if field_state != FieldState.READY:
+			continue
+		ready_fields.append(field_node)
+	return ready_fields
+
+func _execute_harvest_on_fields(fields: Array) -> int:
+	var harvested := 0
+	for field_node in fields:
+		if field_node == null or not is_instance_valid(field_node):
+			continue
+		field_node.call("_harvest")
+		harvested += 1
+	return harvested
+
+func _harvest_connected_group(announce: bool = false, actor_name: String = "") -> int:
+	var ready_fields := _collect_connected_ready_fields()
+	if ready_fields.is_empty():
+		return 0
+	if announce:
+		var actor := actor_name.strip_edges()
+		if actor.is_empty():
+			actor = "Farmer"
+		print("%s erntet automatisch %d verbundene Felder (Start: %s)." % [
+			actor,
+			ready_fields.size(),
+			ready_fields[0].name if ready_fields[0] is Node else name,
+		])
+	return _execute_harvest_on_fields(ready_fields)
