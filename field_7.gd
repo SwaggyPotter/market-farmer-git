@@ -100,7 +100,26 @@ func get_connected_fields(include_self: bool = true) -> Array[Node3D]:
 	var candidates: Array = tree.get_nodes_in_group("field_tile")
 	if candidates.is_empty():
 		return fallback
-	var extent_cache: Dictionary = _build_extent_cache(candidates)
+	var spacing: Vector2 = _get_effective_world_spacing()
+	var origin: Vector3 = _compute_reference_origin(candidates, spacing)
+	var grid_indices: Dictionary = {}
+	var grid_lookup: Dictionary = {}
+	for candidate in candidates:
+		var node3d := candidate as Node3D
+		if node3d == null or not is_instance_valid(node3d):
+			continue
+		var index: Vector2i = _compute_grid_index(node3d.global_transform.origin, spacing, origin)
+		grid_indices[node3d] = index
+		var list: Array = grid_lookup.get(index, [])
+		list.append(node3d)
+		grid_lookup[index] = list
+	if not grid_indices.has(self):
+		var self_index: Vector2i = _compute_grid_index(global_transform.origin, spacing, origin)
+		grid_indices[self] = self_index
+		var self_list: Array = grid_lookup.get(self_index, [])
+		if not self_list.has(self):
+			self_list.append(self)
+		grid_lookup[self_index] = self_list
 	var visited: Dictionary = {}
 	var stack: Array[Node3D] = []
 	stack.append(self)
@@ -116,7 +135,7 @@ func get_connected_fields(include_self: bool = true) -> Array[Node3D]:
 			cluster.append(current)
 		elif current == self and include_self:
 			cluster.append(current)
-		var neighbors: Array[Node3D] = _find_touching_fields(current, candidates, extent_cache)
+		var neighbors: Array[Node3D] = _collect_adjacent_nodes(current, grid_indices, grid_lookup)
 		for neighbor in neighbors:
 			if visited.has(neighbor):
 				continue
@@ -126,50 +145,6 @@ func get_connected_fields(include_self: bool = true) -> Array[Node3D]:
 	elif not include_self:
 		cluster.erase(self)
 	return cluster
-
-func _build_extent_cache(candidates: Array) -> Dictionary:
-	var cache: Dictionary = {}
-	for candidate in candidates:
-		if candidate == null or not is_instance_valid(candidate):
-			continue
-		var node3d := candidate as Node3D
-		if node3d == null:
-			continue
-		var extents: Variant = Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
-		if candidate.has_method("get_collision_half_extents"):
-			extents = candidate.call("get_collision_half_extents")
-		if extents is Vector2:
-			cache[node3d] = extents
-		else:
-			cache[node3d] = Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
-	return cache
-
-func _find_touching_fields(field_node: Node3D, candidates: Array, extent_cache: Dictionary) -> Array[Node3D]:
-	var result: Array[Node3D] = []
-	if field_node == null or not is_instance_valid(field_node):
-		return result
-	var field_extents: Vector2 = Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
-	if extent_cache.has(field_node):
-		field_extents = extent_cache[field_node] as Vector2
-	var origin: Vector3 = field_node.global_transform.origin
-	for candidate_raw in candidates:
-		var candidate := candidate_raw as Node3D
-		if candidate == null or candidate == field_node:
-			continue
-		if not is_instance_valid(candidate):
-			continue
-		if not extent_cache.has(candidate):
-			continue
-		var candidate_extents: Vector2 = extent_cache[candidate] as Vector2
-		var other_origin: Vector3 = candidate.global_transform.origin
-		if _fields_in_contact(origin, field_extents, other_origin, candidate_extents):
-			result.append(candidate)
-	return result
-
-func _fields_in_contact(origin_a: Vector3, half_a: Vector2, origin_b: Vector3, half_b: Vector2) -> bool:
-	var dx: float = abs(origin_a.x - origin_b.x)
-	var dz: float = abs(origin_a.z - origin_b.z)
-	return dx <= (half_a.x + half_b.x + CONTACT_TOLERANCE) and dz <= (half_a.y + half_b.y + CONTACT_TOLERANCE)
 
 func _compute_collision_half_extents() -> Vector2:
 	var spacing: Vector2 = _get_effective_world_spacing()
@@ -192,6 +167,92 @@ func _get_field_manager() -> Node:
 	if tree == null:
 		return null
 	return tree.get_first_node_in_group("field_manager")
+
+func _compute_reference_origin(candidates: Array, spacing: Vector2) -> Vector3:
+	var min_x: float = INF
+	var min_z: float = INF
+	var found: bool = false
+	var safe_spacing_x: float = max(spacing.x, TILE_SIZE)
+	var safe_spacing_z: float = max(spacing.y, TILE_SIZE)
+	for candidate in candidates:
+		var node3d := candidate as Node3D
+		if node3d == null or not is_instance_valid(node3d):
+			continue
+		var pos := node3d.global_transform.origin
+		min_x = min(min_x, pos.x)
+		min_z = min(min_z, pos.z)
+		found = true
+	if not found:
+		return global_transform.origin
+	var snapped_x: float = round(min_x / safe_spacing_x) * safe_spacing_x
+	var snapped_z: float = round(min_z / safe_spacing_z) * safe_spacing_z
+	return Vector3(snapped_x, 0.0, snapped_z)
+
+func _compute_grid_index(position: Vector3, spacing: Vector2, origin: Vector3) -> Vector2i:
+	var safe_spacing_x: float = max(spacing.x, TILE_SIZE)
+	var safe_spacing_z: float = max(spacing.y, TILE_SIZE)
+	var relative := position - origin
+	var index_x: int = int(round(relative.x / safe_spacing_x))
+	var index_z: int = int(round(relative.z / safe_spacing_z))
+	return Vector2i(index_x, index_z)
+
+func _collect_adjacent_nodes(field_node: Node3D, grid_indices: Dictionary, grid_lookup: Dictionary) -> Array[Node3D]:
+	var result: Array[Node3D] = []
+	if field_node == null or not is_instance_valid(field_node):
+		return result
+	if not grid_indices.has(field_node):
+		return result
+	var base_index: Vector2i = grid_indices[field_node]
+	var offsets := [
+		Vector2i(1, 0),
+		Vector2i(-1, 0),
+		Vector2i(0, 1),
+		Vector2i(0, -1),
+	]
+	for offset in offsets:
+		var neighbor_index: Vector2i = base_index + offset
+		if not grid_lookup.has(neighbor_index):
+			continue
+		var group: Array = grid_lookup[neighbor_index]
+		for candidate in group:
+			if candidate == null or candidate == field_node:
+				continue
+			if not is_instance_valid(candidate):
+				continue
+			if result.has(candidate):
+				continue
+			if not _fields_share_edge(field_node, candidate as Node3D):
+				continue
+			result.append(candidate)
+	return result
+
+func _fields_share_edge(field_a: Node3D, field_b: Node3D) -> bool:
+	if field_a == null or field_b == null:
+		return false
+	if not is_instance_valid(field_a) or not is_instance_valid(field_b):
+		return false
+	var pos_a: Vector3 = field_a.global_transform.origin
+	var pos_b: Vector3 = field_b.global_transform.origin
+	var dx: float = abs(pos_a.x - pos_b.x)
+	var dz: float = abs(pos_a.z - pos_b.z)
+	var half_a: Vector2 = Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
+	var half_b: Vector2 = Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
+	if field_a.has_method("get_collision_half_extents"):
+		var ext_a_variant: Variant = field_a.call("get_collision_half_extents")
+		if ext_a_variant is Vector2:
+			half_a = ext_a_variant as Vector2
+	if field_b.has_method("get_collision_half_extents"):
+		var ext_b_variant: Variant = field_b.call("get_collision_half_extents")
+		if ext_b_variant is Vector2:
+			half_b = ext_b_variant as Vector2
+	var tol: float = CONTACT_TOLERANCE
+	var edge_x: float = half_a.x + half_b.x
+	var edge_z: float = half_a.y + half_b.y
+	var aligned_z: bool = dz <= min(half_a.y, half_b.y) + tol
+	var aligned_x: bool = dx <= min(half_a.x, half_b.x) + tol
+	var adjacent_x: bool = aligned_z and abs(dx - edge_x) <= tol
+	var adjacent_z: bool = aligned_x and abs(dz - edge_z) <= tol
+	return adjacent_x or adjacent_z
 
 func can_apply_fertilizer(_fertilizer_id: String = "") -> bool:
 	return state == FieldState.GROWING

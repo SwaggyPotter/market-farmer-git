@@ -35,6 +35,15 @@ const BUILD_MENU_CATEGORY_ORDER = [
 
 const WORLD_MARKET_CHART_SCRIPT = preload("res://world_market_chart.gd")
 
+class MenuEntryMetadata:
+	var action: String = ""
+	var crop_id: String = ""
+	var seed_id: String = ""
+	var fertilizer_id: String = ""
+
+	func is_empty() -> bool:
+		return action.is_empty()
+
 @onready var menu: PopupMenu = $PlantMenu
 @onready var money_label: Label = $WalletPanel/MoneyLabel
 @onready var rent_label: Label = $WalletPanel/RentLabel
@@ -104,7 +113,7 @@ var _research_improve_has_entries: bool = false
 var _latest_farmers: Array = []
 var _known_field_names: Array = []
 var _personnel_refreshing: bool = false
-var _menu_entries: Dictionary = {}
+var _menu_entries: Dictionary[int, MenuEntryMetadata] = {} as Dictionary[int, MenuEntryMetadata]
 var _menu_id_counter: int = 1
 var _current_menu_field_state: int = FIELD_STATE_UNKNOWN
 var _build_item_buttons: Dictionary = {}
@@ -229,7 +238,7 @@ func open_for_tile(tile: Node, screen_pos: Vector2):
 	if tile == null or not is_instance_valid(tile):
 		return
 	current_tile = tile
-	var has_entries := _build_menu_for_tile(tile)
+	var has_entries: bool = _build_menu_for_tile(tile)
 	if not has_entries:
 		current_tile = null
 		return
@@ -245,16 +254,12 @@ func _on_menu_id(id: int):
 	if current_tile == null or not is_instance_valid(current_tile):
 		_close_menu()
 		return
-	var metadata_raw: Variant = _menu_entries.get(id, {})
-	if not (metadata_raw is Dictionary):
-		_close_menu()
-		return
-	var metadata: Dictionary = metadata_raw
+	var metadata: MenuEntryMetadata = _get_menu_metadata(id)
 	if metadata.is_empty():
 		_close_menu()
 		return
-	var action := String(metadata.get("action", ""))
-	var success := false
+	var action: String = metadata.action
+	var success: bool = false
 	match action:
 		MENU_ACTION_PLANT:
 			success = _handle_menu_plant(metadata)
@@ -268,10 +273,16 @@ func _on_menu_id(id: int):
 		if menu and menu.visible and is_instance_valid(current_tile):
 			_build_menu_for_tile(current_tile)
 
-func _handle_menu_plant(metadata: Dictionary) -> bool:
+
+func _get_menu_metadata(id: int) -> MenuEntryMetadata:
+	if _menu_entries.has(id):
+		return _menu_entries[id]
+	return MenuEntryMetadata.new()
+
+func _handle_menu_plant(metadata: MenuEntryMetadata) -> bool:
 	if current_tile == null or not is_instance_valid(current_tile):
 		return false
-	var crop_id := String(metadata.get("crop_id", ""))
+	var crop_id: String = metadata.crop_id
 	if crop_id.is_empty():
 		return false
 	var connected_tiles := _resolve_connected_tiles(current_tile)
@@ -287,7 +298,7 @@ func _handle_menu_plant(metadata: Dictionary) -> bool:
 	if plantable_tiles.is_empty():
 		print("Keine verfuegbaren Felder fuer die Aussaat gefunden.")
 		return false
-	var seed_id := String(metadata.get("seed_id", ""))
+	var seed_id: String = metadata.seed_id
 	if seed_id.is_empty():
 		seed_id = _get_seed_id_for_crop(crop_id)
 	var required_seeds := plantable_tiles.size()
@@ -312,14 +323,14 @@ func _handle_menu_plant(metadata: Dictionary) -> bool:
 		tile.call_deferred("start_growth", crop_id, growth_seconds)
 	return true
 
-func _handle_menu_fertilize(metadata: Dictionary) -> bool:
+func _handle_menu_fertilize(metadata: MenuEntryMetadata) -> bool:
 	if current_tile == null or not is_instance_valid(current_tile):
 		return false
 	var state := _resolve_field_state(current_tile)
 	if state != FIELD_STATE_GROWING:
 		print("Duenger kann nur auf wachsende Felder angewendet werden.")
 		return false
-	var fertilizer_id := String(metadata.get("fertilizer_id", ""))
+	var fertilizer_id: String = metadata.fertilizer_id
 	if fertilizer_id.is_empty():
 		return false
 	if not GameState.has_supply(fertilizer_id):
@@ -405,7 +416,8 @@ func _add_cancel_entry() -> void:
 	var index := menu.get_item_index(MENU_CANCEL_ID)
 	if index == -1:
 		index = menu.item_count - 1
-	var metadata := {"action": "cancel"}
+	var metadata: MenuEntryMetadata = MenuEntryMetadata.new()
+	metadata.action = "cancel"
 	menu.set_item_metadata(index, metadata)
 	_menu_entries[MENU_CANCEL_ID] = metadata
 
@@ -439,11 +451,10 @@ func _add_seed_menu_entries() -> int:
 		menu.set_item_disabled(index, not available)
 		if not tooltip.is_empty():
 			menu.set_item_tooltip(index, tooltip)
-		var metadata := {
-			"action": MENU_ACTION_PLANT,
-			"crop_id": crop_id,
-			"seed_id": seed_id,
-		}
+		var metadata: MenuEntryMetadata = MenuEntryMetadata.new()
+		metadata.action = MENU_ACTION_PLANT
+		metadata.crop_id = crop_id
+		metadata.seed_id = seed_id
 		menu.set_item_metadata(index, metadata)
 		_menu_entries[id] = metadata
 		added += 1
@@ -476,10 +487,9 @@ func _add_fertilizer_menu_entries() -> int:
 		menu.set_item_disabled(index, owned <= 0)
 		if not tooltip.is_empty():
 			menu.set_item_tooltip(index, tooltip)
-		var metadata := {
-			"action": MENU_ACTION_FERTILIZE,
-			"fertilizer_id": item_id,
-		}
+		var metadata: MenuEntryMetadata = MenuEntryMetadata.new()
+		metadata.action = MENU_ACTION_FERTILIZE
+		metadata.fertilizer_id = item_id
 		menu.set_item_metadata(index, metadata)
 		_menu_entries[id] = metadata
 		added += 1
