@@ -146,6 +146,36 @@ func get_connected_fields(include_self: bool = true) -> Array[Node3D]:
 		cluster.erase(self)
 	return cluster
 
+func get_neighbor_fields() -> Array[Node3D]:
+	var neighbors: Array[Node3D] = []
+	var tree := get_tree()
+	if tree == null:
+		return neighbors
+	var candidates: Array = tree.get_nodes_in_group("field_tile")
+	if candidates.is_empty():
+		return neighbors
+	var spacing: Vector2 = _get_effective_world_spacing()
+	var origin: Vector3 = _compute_reference_origin(candidates, spacing)
+	var grid_indices: Dictionary = {}
+	var grid_lookup: Dictionary = {}
+	for candidate in candidates:
+		var node3d := candidate as Node3D
+		if node3d == null or not is_instance_valid(node3d):
+			continue
+		var index: Vector2i = _compute_grid_index(node3d.global_transform.origin, spacing, origin)
+		grid_indices[node3d] = index
+		var list: Array = grid_lookup.get(index, [])
+		list.append(node3d)
+		grid_lookup[index] = list
+	if not grid_indices.has(self):
+		var self_index: Vector2i = _compute_grid_index(global_transform.origin, spacing, origin)
+		grid_indices[self] = self_index
+		var self_list: Array = grid_lookup.get(self_index, [])
+		if not self_list.has(self):
+			self_list.append(self)
+		grid_lookup[self_index] = self_list
+	return _collect_adjacent_nodes(self, grid_indices, grid_lookup)
+
 func _compute_collision_half_extents() -> Vector2:
 	var spacing: Vector2 = _get_effective_world_spacing()
 	var scale: Vector3 = global_transform.basis.get_scale()
@@ -235,23 +265,32 @@ func _fields_share_edge(field_a: Node3D, field_b: Node3D) -> bool:
 	var pos_b: Vector3 = field_b.global_transform.origin
 	var dx: float = abs(pos_a.x - pos_b.x)
 	var dz: float = abs(pos_a.z - pos_b.z)
-	var half_a: Vector2 = Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
-	var half_b: Vector2 = Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
-	if field_a.has_method("get_collision_half_extents"):
-		var ext_a_variant: Variant = field_a.call("get_collision_half_extents")
-		if ext_a_variant is Vector2:
-			half_a = ext_a_variant as Vector2
-	if field_b.has_method("get_collision_half_extents"):
-		var ext_b_variant: Variant = field_b.call("get_collision_half_extents")
-		if ext_b_variant is Vector2:
-			half_b = ext_b_variant as Vector2
-	var tol: float = CONTACT_TOLERANCE
-	var edge_x: float = half_a.x + half_b.x
-	var edge_z: float = half_a.y + half_b.y
-	var aligned_z: bool = dz <= min(half_a.y, half_b.y) + tol
-	var aligned_x: bool = dx <= min(half_a.x, half_b.x) + tol
-	var adjacent_x: bool = aligned_z and abs(dx - edge_x) <= tol
-	var adjacent_z: bool = aligned_x and abs(dz - edge_z) <= tol
+	var spacing_a: Vector2 = Vector2(TILE_SIZE, TILE_SIZE)
+	var spacing_b: Vector2 = Vector2(TILE_SIZE, TILE_SIZE)
+	if field_a.has_method("_get_effective_world_spacing"):
+		var spacing_variant_a: Variant = field_a.call("_get_effective_world_spacing")
+		if spacing_variant_a is Vector2:
+			spacing_a = spacing_variant_a
+	if field_b.has_method("_get_effective_world_spacing"):
+		var spacing_variant_b: Variant = field_b.call("_get_effective_world_spacing")
+		if spacing_variant_b is Vector2:
+			spacing_b = spacing_variant_b
+	var expected_x: float = max(spacing_a.x, spacing_b.x)
+	expected_x = max(expected_x, TILE_SIZE)
+	var expected_z: float = max(spacing_a.y, spacing_b.y)
+	expected_z = max(expected_z, TILE_SIZE)
+	var align_base_x: float = min(spacing_a.x, spacing_b.x)
+	align_base_x = min(align_base_x, TILE_SIZE)
+	var align_base_z: float = min(spacing_a.y, spacing_b.y)
+	align_base_z = min(align_base_z, TILE_SIZE)
+	var align_tol_x: float = max(CONTACT_TOLERANCE, align_base_x * 0.25)
+	var align_tol_z: float = max(CONTACT_TOLERANCE, align_base_z * 0.25)
+	var dist_tol_x: float = max(CONTACT_TOLERANCE, expected_x * 0.1)
+	var dist_tol_z: float = max(CONTACT_TOLERANCE, expected_z * 0.1)
+	var aligned_z: bool = dz <= align_tol_z
+	var aligned_x: bool = dx <= align_tol_x
+	var adjacent_x: bool = aligned_z and abs(dx - expected_x) <= dist_tol_x
+	var adjacent_z: bool = aligned_x and abs(dz - expected_z) <= dist_tol_z
 	return adjacent_x or adjacent_z
 
 func can_apply_fertilizer(_fertilizer_id: String = "") -> bool:

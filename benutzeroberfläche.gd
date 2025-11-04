@@ -354,24 +354,107 @@ func _handle_menu_fertilize(metadata: MenuEntryMetadata) -> bool:
 		return false
 	return true
 
+func _filter_tiles_with_min_contacts(tiles: Array, origin_tile: Node, min_contacts: int) -> Array:
+	if min_contacts <= 0:
+		return tiles
+	if origin_tile == null or not is_instance_valid(origin_tile):
+		return tiles
+	if tiles.is_empty():
+		return tiles
+	for tile in tiles:
+		if tile == null or not is_instance_valid(tile):
+			continue
+		if not tile.has_method("get_neighbor_fields"):
+			return tiles
+	var min_neighbors: int = max(min_contacts, 0)
+	var tile_set: Dictionary = {}
+	for tile in tiles:
+		if tile == null or not is_instance_valid(tile):
+			continue
+		tile_set[tile] = true
+	var neighbor_counts: Dictionary = {}
+	for tile in tiles:
+		if tile == null or not is_instance_valid(tile):
+			continue
+		var count := 0
+		var neighbors_variant: Variant = tile.call("get_neighbor_fields")
+		if neighbors_variant is Array:
+			for neighbor in neighbors_variant:
+				if neighbor == null or not is_instance_valid(neighbor):
+					continue
+				if tile_set.has(neighbor):
+					count += 1
+		neighbor_counts[tile] = count
+	var result: Array = []
+	var core_tiles: Array = []
+	for tile in neighbor_counts.keys():
+		if int(neighbor_counts[tile]) >= min_neighbors:
+			core_tiles.append(tile)
+	if core_tiles.is_empty():
+		if neighbor_counts.has(origin_tile):
+			var origin_count: int = int(neighbor_counts[origin_tile])
+			if origin_count >= min_neighbors or origin_count > 0:
+				return [origin_tile]
+		return []
+	var allowed: Dictionary = {}
+	var stack: Array = core_tiles.duplicate()
+	while not stack.is_empty():
+		var current = stack.pop_back()
+		if current == null or not is_instance_valid(current):
+			continue
+		if not tile_set.has(current):
+			continue
+		if allowed.has(current):
+			continue
+		allowed[current] = true
+		var neighbors_variant: Variant = current.call("get_neighbor_fields")
+		if neighbors_variant is Array:
+			for neighbor in neighbors_variant:
+				if neighbor == null or not is_instance_valid(neighbor):
+					continue
+				if not tile_set.has(neighbor):
+					continue
+				if allowed.has(neighbor):
+					continue
+				stack.append(neighbor)
+	for tile in tiles:
+		if allowed.has(tile):
+			result.append(tile)
+	if result.is_empty() and neighbor_counts.has(origin_tile):
+		var origin_count: int = int(neighbor_counts[origin_tile])
+		if origin_count >= min_neighbors or origin_count > 0:
+			if not result.has(origin_tile):
+				result.append(origin_tile)
+	return result
+
 func _resolve_connected_tiles(tile: Node) -> Array:
 	if tile == null:
 		return []
 	var resolved: Array = []
-	if tile.has_method("get_connected_fields"):
-		var result_variant: Variant = tile.call("get_connected_fields")
-		if result_variant is Array:
-			for entry in result_variant:
-				if entry == null or not is_instance_valid(entry):
+	var stack: Array = [tile]
+	var visited: Dictionary = {}
+	while not stack.is_empty():
+		var current = stack.pop_back()
+		if current == null or not is_instance_valid(current):
+			continue
+		if visited.has(current):
+			continue
+		visited[current] = true
+		resolved.append(current)
+		if not current.has_method("get_neighbor_fields"):
+			continue
+		var neighbors_variant: Variant = current.call("get_neighbor_fields")
+		if neighbors_variant is Array:
+			for neighbor in neighbors_variant:
+				if neighbor == null or not is_instance_valid(neighbor):
 					continue
-				if resolved.has(entry):
+				if visited.has(neighbor):
 					continue
-				resolved.append(entry)
-	if resolved.is_empty():
-		resolved.append(tile)
-	elif not resolved.has(tile):
-		resolved.insert(0, tile)
-	return resolved
+				stack.append(neighbor)
+	if resolved.size() <= 1:
+		return resolved
+	var filtered := _filter_tiles_with_min_contacts(resolved, tile, 2)
+	return filtered
 
 func _close_menu() -> void:
 	if menu:
