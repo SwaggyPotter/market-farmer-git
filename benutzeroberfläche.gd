@@ -96,6 +96,8 @@ class MenuEntryMetadata:
 @onready var build_close_button: Button = $BuildPopup/MarginContainer/VBoxContainer/Header/CloseButton
 @onready var build_empty_label: Label = $BuildPopup/MarginContainer/VBoxContainer/Content/ItemsScroll/ItemsContainer/EmptyLabel
 @onready var build_info_label: Label = $BuildPopup/MarginContainer/VBoxContainer/InfoLabel
+@onready var quickbar_panel: Panel = $QuickbarPanel
+@onready var quickbar_container: HBoxContainer = $QuickbarPanel/QuickbarMargin/QuickbarContainer
 var current_tile: Node = null
 var field_manager: Node = null
 var _latest_inventory: Dictionary = {}
@@ -113,6 +115,14 @@ var _research_improve_has_entries: bool = false
 var _latest_farmers: Array = []
 var _known_field_names: Array = []
 var _personnel_refreshing: bool = false
+var _quickbar_buttons: Dictionary = {}
+var _seed_to_crop_cache: Dictionary = {}
+var _active_quick_seed_id: String = ""
+var _active_quick_crop_id: String = ""
+var _quick_seed_drag_active: bool = false
+var _quick_seed_drag_consumed: Dictionary = {}
+var _harvest_drag_active: bool = false
+var _harvest_drag_consumed: Dictionary = {}
 var _menu_entries: Dictionary[int, MenuEntryMetadata] = {} as Dictionary[int, MenuEntryMetadata]
 var _menu_id_counter: int = 1
 var _current_menu_field_state: int = FIELD_STATE_UNKNOWN
@@ -279,39 +289,7 @@ func _get_menu_metadata(id: int) -> MenuEntryMetadata:
 		return _menu_entries[id]
 	return MenuEntryMetadata.new()
 
-func _handle_menu_plant(metadata: MenuEntryMetadata) -> bool:
-	if current_tile == null or not is_instance_valid(current_tile):
-		return false
-	var crop_id: String = metadata.crop_id
-	if crop_id.is_empty():
-		return false
-	var connected_tiles := _resolve_connected_tiles(current_tile)
-	var plantable_tiles: Array = []
-	for tile in connected_tiles:
-		if tile == null or not is_instance_valid(tile):
-			continue
-		var tile_state := _resolve_field_state(tile)
-		if tile_state != FIELD_STATE_EMPTY:
-			print("Verbundene Felder muessen frei sein fuer die Aussaat (z. B. %s)." % tile.name)
-			return false
-		plantable_tiles.append(tile)
-	if plantable_tiles.is_empty():
-		print("Keine verfuegbaren Felder fuer die Aussaat gefunden.")
-		return false
-	var seed_id: String = metadata.seed_id
-	if seed_id.is_empty():
-		seed_id = _get_seed_id_for_crop(crop_id)
-	var required_seeds := plantable_tiles.size()
-	if not seed_id.is_empty():
-		if not GameState.has_supply(seed_id, required_seeds):
-			print("Es sind nicht genug %s verfuegbar (%d benoetigt)." % [
-				GameState.get_display_name(seed_id),
-				required_seeds,
-			])
-			return false
-		if not GameState.consume_supply(seed_id, required_seeds):
-			print("Fehler beim Verbrauchen von %s." % GameState.get_display_name(seed_id))
-			return false
+func _resolve_growth_seconds(crop_id: String) -> float:
 	var growth_seconds: float = DEFAULT_GROWTH_SECONDS
 	if GameState.has_method("get_crop_growth_duration"):
 		growth_seconds = GameState.get_crop_growth_duration(crop_id)
@@ -319,9 +297,44 @@ func _handle_menu_plant(metadata: MenuEntryMetadata) -> bool:
 		growth_seconds = GameState.get_crop_base_growth_time(crop_id)
 	if growth_seconds <= 0.0:
 		growth_seconds = DEFAULT_GROWTH_SECONDS
-	for tile in plantable_tiles:
-		tile.call_deferred("start_growth", crop_id, growth_seconds)
+	return growth_seconds
+
+func _plant_crop_on_tile(tile: Node, crop_id: String, seed_id: String) -> bool:
+	if tile == null or not is_instance_valid(tile):
+		return false
+	if crop_id.is_empty():
+		return false
+	var tile_state := _resolve_field_state(tile)
+	if tile_state != FIELD_STATE_EMPTY:
+		print("Feld %s kann nicht bepflanzt werden (Status: %d)" % [tile.name, tile_state])
+		return false
+	var plantable_tiles: Array = [tile]
+	var resolved_seed := seed_id
+	if resolved_seed.is_empty():
+		resolved_seed = _get_seed_id_for_crop(crop_id)
+	var required_seeds := plantable_tiles.size()
+	if not resolved_seed.is_empty():
+		if not GameState.has_supply(resolved_seed, required_seeds):
+			print("Es sind nicht genug %s verfuegbar (%d benoetigt)." % [
+				GameState.get_display_name(resolved_seed),
+				required_seeds,
+			])
+			return false
+		if not GameState.consume_supply(resolved_seed, required_seeds):
+			print("Fehler beim Verbrauchen von %s." % GameState.get_display_name(resolved_seed))
+			return false
+	var growth_seconds := _resolve_growth_seconds(crop_id)
+	for plant_tile in plantable_tiles:
+		plant_tile.call_deferred("start_growth", crop_id, growth_seconds)
 	return true
+
+func _handle_menu_plant(metadata: MenuEntryMetadata) -> bool:
+	if current_tile == null or not is_instance_valid(current_tile):
+		return false
+	var crop_id: String = metadata.crop_id
+	if crop_id.is_empty():
+		return false
+	return _plant_crop_on_tile(current_tile, crop_id, metadata.seed_id)
 
 func _handle_menu_fertilize(metadata: MenuEntryMetadata) -> bool:
 	if current_tile == null or not is_instance_valid(current_tile):
@@ -427,35 +440,6 @@ func _filter_tiles_with_min_contacts(tiles: Array, origin_tile: Node, min_contac
 				result.append(origin_tile)
 	return result
 
-func _resolve_connected_tiles(tile: Node) -> Array:
-	if tile == null:
-		return []
-	var resolved: Array = []
-	var stack: Array = [tile]
-	var visited: Dictionary = {}
-	while not stack.is_empty():
-		var current = stack.pop_back()
-		if current == null or not is_instance_valid(current):
-			continue
-		if visited.has(current):
-			continue
-		visited[current] = true
-		resolved.append(current)
-		if not current.has_method("get_neighbor_fields"):
-			continue
-		var neighbors_variant: Variant = current.call("get_neighbor_fields")
-		if neighbors_variant is Array:
-			for neighbor in neighbors_variant:
-				if neighbor == null or not is_instance_valid(neighbor):
-					continue
-				if visited.has(neighbor):
-					continue
-				stack.append(neighbor)
-	if resolved.size() <= 1:
-		return resolved
-	var filtered := _filter_tiles_with_min_contacts(resolved, tile, 2)
-	return filtered
-
 func _close_menu() -> void:
 	if menu:
 		menu.hide()
@@ -471,7 +455,7 @@ func _build_menu_for_tile(tile: Node) -> bool:
 	_current_menu_field_state = _resolve_field_state(tile)
 	var total_added := 0
 	if _current_menu_field_state == FIELD_STATE_EMPTY:
-		total_added += _add_seed_menu_entries()
+		return false
 	elif _current_menu_field_state == FIELD_STATE_GROWING:
 		total_added += _add_fertilizer_menu_entries()
 	if total_added <= 0:
@@ -648,8 +632,250 @@ func _on_supplies_changed(supplies: Dictionary) -> void:
 	_latest_supplies = supplies.duplicate(true)
 	_update_market_supplies(_latest_supplies)
 	_update_storage_view()
+	_update_quickbar()
 	if menu and menu.visible and current_tile and is_instance_valid(current_tile):
 		_build_menu_for_tile(current_tile)
+
+func _update_quickbar() -> void:
+	if quickbar_container == null or quickbar_panel == null:
+		return
+	var entries := _collect_quickbar_seed_entries()
+	for child in quickbar_container.get_children():
+		child.queue_free()
+	_quickbar_buttons.clear()
+	if entries.is_empty():
+		quickbar_panel.visible = false
+		if _quick_seed_drag_active:
+			_quick_seed_drag_active = false
+			_quick_seed_drag_consumed.clear()
+		_active_quick_seed_id = ""
+		_active_quick_crop_id = ""
+		return
+	quickbar_panel.visible = true
+	for entry in entries:
+		var seed_id := String(entry.get("seed_id", ""))
+		if seed_id.is_empty():
+			continue
+		var crop_id := String(entry.get("crop_id", ""))
+		var amount: int = int(entry.get("amount", 0))
+		var display_name := String(entry.get("display_name", seed_id))
+		var button := Button.new()
+		button.name = "QuickSeed_%s" % seed_id
+		button.text = "%s (%d)" % [display_name, amount]
+		button.toggle_mode = true
+		button.focus_mode = Control.FOCUS_NONE
+		button.mouse_filter = Control.MOUSE_FILTER_STOP
+		button.custom_minimum_size = Vector2(96, 0)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.tooltip_text = "Linksklick halten und ueber Felder ziehen, um %s anzubauen." % display_name
+		button.gui_input.connect(Callable(self, "_on_quickbar_seed_gui_input").bind(seed_id, crop_id))
+		quickbar_container.add_child(button)
+		_quickbar_buttons[seed_id] = button
+	if not _active_quick_seed_id.is_empty() and _quickbar_buttons.has(_active_quick_seed_id):
+		_set_quickbar_button_state(_active_quick_seed_id, _quick_seed_drag_active)
+	else:
+		if _quick_seed_drag_active:
+			_quick_seed_drag_active = false
+			_quick_seed_drag_consumed.clear()
+		_active_quick_seed_id = ""
+		_active_quick_crop_id = ""
+
+func _collect_quickbar_seed_entries() -> Array:
+	var entries: Array = []
+	for item_id in _latest_supplies.keys():
+		var amount: int = int(_latest_supplies.get(item_id, 0))
+		if amount <= 0:
+			continue
+		var category_id := GameState.get_item_category(item_id)
+		if category_id != GameState.ITEM_CATEGORY_SEEDS:
+			continue
+		var crop_id := _resolve_crop_for_seed(item_id)
+		var display_name := GameState.get_display_name(item_id)
+		entries.append({
+			"seed_id": item_id,
+			"crop_id": crop_id,
+			"amount": amount,
+			"display_name": display_name,
+		})
+	entries.sort_custom(Callable(self, "_sort_quickbar_entries"))
+	return entries
+
+func _sort_quickbar_entries(a: Dictionary, b: Dictionary) -> bool:
+	var name_a: String = String(a.get("display_name", ""))
+	var name_b: String = String(b.get("display_name", ""))
+	return name_a.casecmp_to(name_b) < 0
+
+func _resolve_crop_for_seed(seed_id: String) -> String:
+	if seed_id.is_empty():
+		return ""
+	if _seed_to_crop_cache.has(seed_id):
+		return String(_seed_to_crop_cache[seed_id])
+	var crop_ids: Array = []
+	if GameState.has_method("get_crop_ids"):
+		crop_ids = GameState.get_crop_ids()
+	if crop_ids.is_empty():
+		crop_ids = CROP_TO_SEED.keys()
+	for crop_id in crop_ids:
+		var candidate_seed := _get_seed_id_for_crop(String(crop_id))
+		if candidate_seed == seed_id:
+			_seed_to_crop_cache[seed_id] = String(crop_id)
+			return String(crop_id)
+	_seed_to_crop_cache[seed_id] = ""
+	return ""
+
+func _on_quickbar_seed_gui_input(event: InputEvent, seed_id: String, crop_id: String) -> void:
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
+			if mouse_event.pressed:
+				if crop_id.is_empty():
+					print("Kein Anbauziel fuer %s konfiguriert." % seed_id)
+					return
+				_start_quick_seed_drag(seed_id, crop_id)
+			else:
+				if _quick_seed_drag_active:
+					_stop_quick_seed_drag()
+
+func _set_quickbar_button_state(seed_id: String, pressed: bool) -> void:
+	if not _quickbar_buttons.has(seed_id):
+		return
+	var button: Button = _quickbar_buttons[seed_id]
+	if button == null or not is_instance_valid(button):
+		return
+	button.button_pressed = pressed
+
+func _start_quick_seed_drag(seed_id: String, crop_id: String) -> void:
+	if seed_id.is_empty() or crop_id.is_empty():
+		return
+	if _quick_seed_drag_active and _active_quick_seed_id == seed_id:
+		return
+	_stop_harvest_drag()
+	_active_quick_seed_id = seed_id
+	_active_quick_crop_id = crop_id
+	_quick_seed_drag_active = true
+	_quick_seed_drag_consumed.clear()
+	for existing_seed in _quickbar_buttons.keys():
+		_set_quickbar_button_state(existing_seed, existing_seed == seed_id)
+	if menu and menu.visible:
+		_close_menu()
+
+func _stop_quick_seed_drag() -> void:
+	if not _quick_seed_drag_active and _active_quick_seed_id.is_empty():
+		return
+	_quick_seed_drag_active = false
+	_quick_seed_drag_consumed.clear()
+	for seed_id in _quickbar_buttons.keys():
+		_set_quickbar_button_state(seed_id, false)
+	_active_quick_seed_id = ""
+	_active_quick_crop_id = ""
+
+func _start_harvest_drag() -> void:
+	if _harvest_drag_active:
+		return
+	_harvest_drag_active = true
+	_harvest_drag_consumed.clear()
+
+func _stop_harvest_drag() -> void:
+	if not _harvest_drag_active:
+		return
+	_harvest_drag_active = false
+	_harvest_drag_consumed.clear()
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
+			if not mouse_event.pressed:
+				if _quick_seed_drag_active:
+					_stop_quick_seed_drag()
+				_stop_harvest_drag()
+
+func _process(_delta: float) -> void:
+	if _quick_seed_drag_active:
+		_update_quick_seed_drag()
+	var left_pressed := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	if not _quick_seed_drag_active and left_pressed:
+		if not _harvest_drag_active:
+			_start_harvest_drag()
+		_update_harvest_drag()
+	elif _harvest_drag_active:
+		_stop_harvest_drag()
+
+func _update_quick_seed_drag() -> void:
+	if not _quick_seed_drag_active:
+		return
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) == false:
+		_stop_quick_seed_drag()
+		return
+	if _active_quick_seed_id.is_empty() or _active_quick_crop_id.is_empty():
+		return
+	var field_tile := _pick_field_under_cursor()
+	if field_tile == null or not is_instance_valid(field_tile):
+		return
+	var field_id := field_tile.get_instance_id()
+	if _quick_seed_drag_consumed.has(field_id):
+		return
+	_quick_seed_drag_consumed[field_id] = true
+	var success := _plant_crop_on_tile(field_tile, _active_quick_crop_id, _active_quick_seed_id)
+	if success:
+		return
+
+func _update_harvest_drag() -> void:
+	if not _harvest_drag_active:
+		return
+	if _quick_seed_drag_active:
+		return
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) == false:
+		_stop_harvest_drag()
+		return
+	var field_tile := _pick_field_under_cursor()
+	if field_tile == null or not is_instance_valid(field_tile):
+		return
+	var field_id := field_tile.get_instance_id()
+	if _harvest_drag_consumed.has(field_id):
+		return
+	_harvest_drag_consumed[field_id] = true
+	var field_state := _resolve_field_state(field_tile)
+	if field_state != FIELD_STATE_READY:
+		return
+	if field_tile.has_method("_harvest_connected_group"):
+		field_tile.call("_harvest_connected_group")
+	elif field_tile.has_method("request_harvest"):
+		field_tile.call("request_harvest")
+
+func _pick_field_under_cursor() -> Node3D:
+	var viewport := get_viewport()
+	if viewport == null:
+		return null
+	var camera := viewport.get_camera_3d()
+	if camera == null:
+		return null
+	var world3d := viewport.world_3d
+	if world3d == null:
+		return null
+	var mouse_pos := viewport.get_mouse_position()
+	var origin := camera.project_ray_origin(mouse_pos)
+	var direction := camera.project_ray_normal(mouse_pos)
+	if direction == Vector3.ZERO:
+		return null
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * 500.0)
+	query.collide_with_areas = false
+	query.collide_with_bodies = true
+	var space_state := world3d.direct_space_state
+	if space_state == null:
+		return null
+	var result := space_state.intersect_ray(query)
+	if result.is_empty():
+		return null
+	var collider: Object = result.get("collider")
+	if collider == null:
+		return null
+	var node := collider as Node
+	while node != null and not node.is_in_group("field_tile"):
+		node = node.get_parent()
+	if node != null and node.is_in_group("field_tile"):
+		return node as Node3D
+	return null
 
 func _on_market_log_updated(entries: Array) -> void:
 	_update_market_log(entries)
