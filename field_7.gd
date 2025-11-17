@@ -75,6 +75,7 @@ func _on_input_event(_camera, event, _position, _normal, _shape_idx):
 		match state:
 			FieldState.EMPTY:
 				print("Klick auf freies Feld:", name, "- nutze die Schnellleiste zum Anpflanzen.")
+				get_tree().call_group("ui", "open_for_tile", self, event.position)
 			FieldState.GROWING:
 				print("Feld", name, "wächst noch:", crop_type, "(Rest:", "%.2f" % growth_timer.time_left, "s)")
 				get_tree().call_group("ui", "open_for_tile", self, event.position)
@@ -307,7 +308,7 @@ func apply_fertilizer(fertilizer_id: String) -> bool:
 		return false
 	var recognized := false
 	for effect_dict in effects:
-		var effect_type := String(effect_dict.get("type", ""))
+		var effect_type: String = String(effect_dict.get("type", ""))
 		match effect_type:
 			"yield_bonus":
 				var value := float(effect_dict.get("value", 0.0))

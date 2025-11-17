@@ -242,7 +242,8 @@ func buy_field() -> bool:
 	if not has_free_slot():
 		print("Keine freien Felder mehr verfuegbar.")
 		return false
-	if not GameState.try_spend(field_cost):
+	var use_move_credit := GameState.has_method("has_field_move_credit") and GameState.has_field_move_credit()
+	if not use_move_credit and not GameState.try_spend(field_cost):
 		print("Nicht genug Geld. Ein Feld kostet %d." % field_cost)
 		return false
 	if field_scene == null:
@@ -262,14 +263,74 @@ func buy_field() -> bool:
 		_update_model_reference()
 		_align_existing_models()
 	GameState.update_field_count(get_field_count())
+	if use_move_credit and GameState.has_method("consume_field_move_credit"):
+		GameState.consume_field_move_credit()
 	return true
+
+func remove_field_node(field_node: Node) -> bool:
+	if field_node == null or not is_instance_valid(field_node):
+		return false
+	var field := field_node as Node3D
+	if field == null:
+		return false
+	var container := _ensure_field_container()
+	if container == null:
+		return false
+	if field.get_parent() != container:
+		return false
+	var index := field.get_index()
+	container.remove_child(field)
+	field.queue_free()
+	_remove_field_model_at(index)
+	_on_field_structure_changed()
+	return true
+
+func remove_field_by_name(field_name: String) -> bool:
+	if field_name.is_empty():
+		return false
+	var container := _ensure_field_container()
+	if container == null:
+		return false
+	var node := container.get_node_or_null(NodePath(field_name))
+	if node == null:
+		return false
+	return remove_field_node(node)
+
+func _remove_field_model_at(index: int) -> void:
+	var model_container := _ensure_field_model_container()
+	if model_container == null:
+		return
+	if index >= 0 and index < model_container.get_child_count():
+		var model := model_container.get_child(index)
+		model_container.remove_child(model)
+		model.queue_free()
+	_trim_field_models()
+
+func _trim_field_models() -> void:
+	if _field_model_container == null:
+		return
+	var desired: int = int(max(get_field_count(), 0))
+	while _field_model_container.get_child_count() > desired:
+		var extra := _field_model_container.get_child(_field_model_container.get_child_count() - 1)
+		_field_model_container.remove_child(extra)
+		extra.queue_free()
+
+func _on_field_structure_changed() -> void:
+	_trim_field_models()
+	if _ensure_field_model_container():
+		_update_model_reference()
+		_align_existing_models()
+	if get_field_count() <= 0:
+		grid_origin = Vector3.ZERO
+	if GameState.has_method("update_field_count"):
+		GameState.update_field_count(get_field_count())
 
 func _physics_process(_delta: float) -> void:
 	if _current_build_id.is_empty():
 		return
 	if not GameState.has_method("get_build_definition"):
 		return
-	var definition: Dictionary = GameState.get_build_definition(_current_build_id)
+	var definition: Dictionary = GameState.get_build_definition(_current_build_id) as Dictionary
 	if definition.is_empty():
 		GameState.cancel_build_mode()
 		return
@@ -288,7 +349,8 @@ func _physics_process(_delta: float) -> void:
 	var build_type := String(definition.get("build_type", ""))
 	var free_first_field := build_type == "field" and get_field_count() <= 0
 	var can_afford := GameState.can_afford_build(_current_build_id)
-	if free_first_field:
+	var has_move_credit := build_type == "field" and GameState.has_method("has_field_move_credit") and GameState.has_field_move_credit()
+	if free_first_field or has_move_credit:
 		can_afford = true
 	_preview_position = snapped
 	_preview_valid = can_afford and not blocked
@@ -675,7 +737,7 @@ func _update_preview_color(is_valid: bool) -> void:
 	if _build_preview_material == null:
 		return
 	var alpha := 0.35
-	var color := _preview_base_color
+	var color: Color = _preview_base_color
 	if not is_valid:
 		color = Color(0.8, 0.2, 0.2)
 	_build_preview_material.albedo_color = Color(color.r, color.g, color.b, alpha)
@@ -688,12 +750,19 @@ func _try_place_current_build() -> void:
 		return
 	if not GameState.has_method("get_build_definition"):
 		return
-	var definition := GameState.get_build_definition(_current_build_id)
+	var definition: Dictionary = GameState.get_build_definition(_current_build_id)
 	if definition.is_empty():
 		GameState.cancel_build_mode()
 		return
 	var build_type := String(definition.get("build_type", ""))
-	var skip_cost := build_type == "field" and get_field_count() <= 0
+	var use_move_credit := false
+	var skip_cost := false
+	if build_type == "field":
+		if get_field_count() <= 0:
+			skip_cost = true
+		elif GameState.has_method("has_field_move_credit") and GameState.has_field_move_credit():
+			skip_cost = true
+			use_move_credit = true
 	var spent_cost := false
 	if not skip_cost:
 		if not GameState.spend_for_build(_current_build_id):
@@ -716,6 +785,8 @@ func _try_place_current_build() -> void:
 		GameState.cancel_build_mode()
 		return
 	GameState.register_build_instance(_current_build_id, metadata)
+	if use_move_credit and GameState.has_method("consume_field_move_credit"):
+		GameState.consume_field_move_credit()
 
 func _place_generic_build(definition: Dictionary) -> Dictionary:
 	var container := _ensure_build_container()

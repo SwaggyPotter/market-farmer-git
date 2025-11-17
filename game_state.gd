@@ -317,6 +317,7 @@ var _field_growth_info: Dictionary = {}
 var _active_build_mode: String = ""
 var _built_structures: Array = []
 var _seed_processing_buildings: int = 0
+var _field_move_credits: int = 0
 
 func _ready() -> void:
 	_rent_timer = _ensure_rent_timer()
@@ -477,8 +478,11 @@ func can_afford_build(build_id: String) -> bool:
 	var definition: Dictionary = definition_variant
 	var cost := int(definition.get("cost", 0))
 	var build_type := String(definition.get("build_type", ""))
-	if build_type == "field" and _total_field_count <= 0:
-		return true
+	if build_type == "field":
+		if _total_field_count <= 0:
+			return true
+		if has_field_move_credit():
+			return true
 	return _money >= cost
 
 func get_active_build_mode() -> String:
@@ -517,6 +521,23 @@ func spend_for_build(build_id: String) -> bool:
 	if cost <= 0:
 		return true
 	return try_spend(cost)
+
+func add_field_move_credit(amount: int = 1) -> void:
+	if amount <= 0:
+		return
+	_field_move_credits = max(_field_move_credits + amount, 0)
+
+func get_field_move_credit_count() -> int:
+	return max(_field_move_credits, 0)
+
+func has_field_move_credit() -> bool:
+	return _field_move_credits > 0
+
+func consume_field_move_credit() -> bool:
+	if _field_move_credits <= 0:
+		return false
+	_field_move_credits -= 1
+	return true
 
 func register_build_instance(build_id: String, metadata: Dictionary = {}) -> Dictionary:
 	if build_id.is_empty():

@@ -3,6 +3,8 @@ extends Control
 const MENU_CANCEL_ID = 0
 const MENU_ACTION_PLANT = "plant"
 const MENU_ACTION_FERTILIZE = "fertilize"
+const MENU_ACTION_REMOVE_FIELD = "remove_field"
+const MENU_ACTION_MOVE_FIELD = "move_field"
 const FIELD_STATE_UNKNOWN = -1
 const FIELD_STATE_EMPTY = 0
 const FIELD_STATE_GROWING = 1
@@ -275,6 +277,10 @@ func _on_menu_id(id: int):
 			success = _handle_menu_plant(metadata)
 		MENU_ACTION_FERTILIZE:
 			success = _handle_menu_fertilize(metadata)
+		MENU_ACTION_REMOVE_FIELD:
+			success = _handle_menu_remove_field(metadata)
+		MENU_ACTION_MOVE_FIELD:
+			success = _handle_menu_move_field(metadata)
 		_:
 			print("Unbekannte Menu-Aktion:", action)
 	if success:
@@ -367,6 +373,38 @@ func _handle_menu_fertilize(metadata: MenuEntryMetadata) -> bool:
 		return false
 	return true
 
+func _handle_menu_remove_field(_metadata: MenuEntryMetadata) -> bool:
+	if current_tile == null or not is_instance_valid(current_tile):
+		return false
+	var cost := _get_field_removal_cost()
+	if cost > 0 and not GameState.try_spend(cost):
+		print("Nicht genug Geld, um das Feld zu entfernen. Kosten: %d" % cost)
+		return false
+	if not _request_field_removal(current_tile):
+		if cost > 0:
+			GameState.add_money(cost)
+		print("Feld konnte nicht entfernt werden:", current_tile.name)
+		return false
+	return true
+
+func _handle_menu_move_field(_metadata: MenuEntryMetadata) -> bool:
+	if current_tile == null or not is_instance_valid(current_tile):
+		return false
+	var cost := _get_field_move_cost()
+	if cost > 0 and not GameState.try_spend(cost):
+		print("Nicht genug Geld, um das Feld zu verlegen. Kosten: %d" % cost)
+		return false
+	if not _request_field_removal(current_tile):
+		if cost > 0:
+			GameState.add_money(cost)
+		print("Feld konnte nicht verlegt werden:", current_tile.name)
+		return false
+	if GameState.has_method("add_field_move_credit"):
+		GameState.add_field_move_credit(1)
+	if not GameState.start_build_mode("field_basic"):
+		print("Neuer Feldbau konnte nicht gestartet werden. Nutze das Bau-Menue, um das Feld spaeter zu platzieren.")
+	return true
+
 func _filter_tiles_with_min_contacts(tiles: Array, origin_tile: Node, min_contacts: int) -> Array:
 	if min_contacts <= 0:
 		return tiles
@@ -454,10 +492,12 @@ func _build_menu_for_tile(tile: Node) -> bool:
 	_reset_menu_state()
 	_current_menu_field_state = _resolve_field_state(tile)
 	var total_added := 0
-	if _current_menu_field_state == FIELD_STATE_EMPTY:
-		return false
-	elif _current_menu_field_state == FIELD_STATE_GROWING:
-		total_added += _add_fertilizer_menu_entries()
+	var fertilizer_added := 0
+	if _current_menu_field_state == FIELD_STATE_GROWING:
+		fertilizer_added = _add_fertilizer_menu_entries()
+		total_added += fertilizer_added
+	var management_added := _add_field_management_entries(tile, total_added > 0)
+	total_added += management_added
 	if total_added <= 0:
 		_reset_menu_state()
 		return false
@@ -562,6 +602,49 @@ func _add_fertilizer_menu_entries() -> int:
 		added += 1
 	return added
 
+func _add_field_management_entries(tile: Node, add_separator_before: bool) -> int:
+	if tile == null or not is_instance_valid(tile):
+		return 0
+	var manager := _ensure_field_manager_reference()
+	if manager == null or not manager.has_method("remove_field_node"):
+		return 0
+	var removal_cost := _get_field_removal_cost()
+	var move_cost := _get_field_move_cost()
+	var added := 0
+	if add_separator_before:
+		menu.add_separator()
+	var removal_label := _format_field_cost_label("Feld entfernen", removal_cost)
+	var removal_id := _request_menu_id()
+	menu.add_item(removal_label, removal_id)
+	var removal_index := menu.get_item_index(removal_id)
+	if removal_index == -1:
+		removal_index = menu.item_count - 1
+	var can_remove := _can_afford_amount(removal_cost)
+	menu.set_item_disabled(removal_index, not can_remove)
+	if not can_remove:
+		menu.set_item_tooltip(removal_index, "Nicht genug Geld, um das Feld zu entfernen.")
+	var removal_metadata := MenuEntryMetadata.new()
+	removal_metadata.action = MENU_ACTION_REMOVE_FIELD
+	menu.set_item_metadata(removal_index, removal_metadata)
+	_menu_entries[removal_id] = removal_metadata
+	added += 1
+	var move_label := _format_field_cost_label("Feld verlegen", move_cost)
+	var move_id := _request_menu_id()
+	menu.add_item(move_label, move_id)
+	var move_index := menu.get_item_index(move_id)
+	if move_index == -1:
+		move_index = menu.item_count - 1
+	var can_move := _can_afford_amount(move_cost)
+	menu.set_item_disabled(move_index, not can_move)
+	if not can_move:
+		menu.set_item_tooltip(move_index, "Nicht genug Geld, um das Feld zu verlegen.")
+	var move_metadata := MenuEntryMetadata.new()
+	move_metadata.action = MENU_ACTION_MOVE_FIELD
+	menu.set_item_metadata(move_index, move_metadata)
+	_menu_entries[move_id] = move_metadata
+	added += 1
+	return added
+
 func _resolve_field_state(tile: Node) -> int:
 	if tile == null or not is_instance_valid(tile):
 		return FIELD_STATE_UNKNOWN
@@ -613,6 +696,52 @@ func _get_current_field_count() -> int:
 
 func _refresh_field_manager() -> void:
 	field_manager = _find_field_manager()
+
+func _ensure_field_manager_reference() -> Node:
+	if field_manager == null or not is_instance_valid(field_manager):
+		field_manager = _find_field_manager()
+	return field_manager
+
+func _get_field_cost() -> int:
+	var cost := 0
+	if GameState.has_method("get_build_definition"):
+		var definition := GameState.get_build_definition("field_basic")
+		if definition is Dictionary and not definition.is_empty():
+			cost = int(definition.get("cost", 0))
+	if cost <= 0 and field_manager and is_instance_valid(field_manager) and field_manager.has_method("get_field_cost"):
+		cost = int(field_manager.call("get_field_cost"))
+	return max(cost, 0)
+
+func _get_field_removal_cost() -> int:
+	return _get_field_cost()
+
+func _get_field_move_cost() -> int:
+	var base := _get_field_cost()
+	if base <= 0:
+		return 0
+	var computed := int(round(float(base) / 3.0))
+	if computed <= 0 and base > 0:
+		return 1
+	return computed
+
+func _format_field_cost_label(base_text: String, cost: int) -> String:
+	if cost <= 0:
+		return "%s (kostenlos)" % base_text
+	return "%s (-%d)" % [base_text, cost]
+
+func _can_afford_amount(amount: int) -> bool:
+	return amount <= 0 or GameState.money >= amount
+
+func _request_field_removal(tile: Node) -> bool:
+	if tile == null or not is_instance_valid(tile):
+		return false
+	var manager := _ensure_field_manager_reference()
+	if manager == null or not manager.has_method("remove_field_node"):
+		return false
+	var result: Variant = manager.call("remove_field_node", tile)
+	if result is bool:
+		return result
+	return bool(result)
 
 func _on_storage_button_pressed() -> void:
 	if storage_popup == null:
