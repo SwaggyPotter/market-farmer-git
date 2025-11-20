@@ -27,6 +27,9 @@ const DEFAULT_FIELD_MODEL_RELATIVE := Transform3D(
 
 const MIN_HALF_EXTENT := 0.25
 
+const FIELD_MODEL_TEXTURE := preload("res://assets/textures/ground/redDirt/red_dirt_mud_01_diff_4k.jpg")
+const FIELD_MODEL_TEXTURE_UV1_SCALE := Vector3(6.0, 6.0, 1.0)
+
 var _field_container: Node3D = null
 var _field_model_container: Node3D = null
 var _model_relative: Transform3D = DEFAULT_FIELD_MODEL_RELATIVE
@@ -203,12 +206,59 @@ func _get_or_create_model(index: int) -> Node3D:
 func _apply_model_slot(model: Node3D, field: Node3D, index: int) -> void:
 	model.global_transform = field.global_transform * _model_relative
 	model.name = "FieldModel%d" % (index + 1)
+	_ensure_field_model_texture(model)
+
+func _ensure_field_model_texture(node: Node) -> void:
+	if node == null:
+		return
+	if FIELD_MODEL_TEXTURE == null:
+		return
+	if node is MeshInstance3D:
+		_apply_field_mesh_texture(node as MeshInstance3D)
+	for child in node.get_children():
+		if child is Node:
+			_ensure_field_model_texture(child as Node)
+
+func _apply_field_mesh_texture(mesh_instance: MeshInstance3D) -> void:
+	if mesh_instance == null:
+		return
+	var mesh: Mesh = mesh_instance.mesh
+	if mesh != null and mesh.get_surface_count() > 0:
+		for surface in mesh.get_surface_count():
+			var material: Material = mesh_instance.get_surface_override_material(surface)
+			if material == null:
+				material = mesh_instance.get_active_material(surface)
+			if material == null and mesh != null:
+				material = mesh.surface_get_material(surface)
+			var std_mat := _configure_field_model_material(material)
+			mesh_instance.set_surface_override_material(surface, std_mat)
+	else:
+		var mat_override: Material = mesh_instance.material_override
+		var std_override := _configure_field_model_material(mat_override)
+		mesh_instance.material_override = std_override
+
+func _configure_field_model_material(material: Material) -> StandardMaterial3D:
+	var result: StandardMaterial3D = null
+	if material is StandardMaterial3D:
+		result = material as StandardMaterial3D
+		if not result.resource_local_to_scene:
+			result = result.duplicate() as StandardMaterial3D
+	else:
+		result = StandardMaterial3D.new()
+	result.resource_local_to_scene = true
+	result.albedo_color = Color(1, 1, 1, 1)
+	result.albedo_texture = FIELD_MODEL_TEXTURE
+	result.texture_repeat = true
+	result.uv1_scale = FIELD_MODEL_TEXTURE_UV1_SCALE
+	return result
 
 func _create_field_model() -> Node3D:
 	if field_model_scene:
 		var instance := field_model_scene.instantiate()
 		if instance is Node3D:
-			return instance as Node3D
+			var node_instance := instance as Node3D
+			_ensure_field_model_texture(node_instance)
+			return node_instance
 		instance.queue_free()
 	var template := _get_model_at(0)
 	if template:

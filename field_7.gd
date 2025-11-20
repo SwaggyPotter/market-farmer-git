@@ -2,6 +2,8 @@ extends Node3D
 
 const TILE_SIZE := 1.0
 const Y_OFFSET  := 0.01
+const FIELD_TEXTURE := preload("res://assets/textures/ground/redDirt/red_dirt_mud_01_diff_4k.jpg")
+const FIELD_TEXTURE_UV1_SCALE := Vector3(6.0, 6.0, 1.0)
 const COLOR_EMPTY := Color(0.754, 0.0, 0.254, 1.0)
 const COLOR_GROWING := Color(0.868, 0.867, 0.0, 1.0)
 const COLOR_READY := Color(0.223, 0.737, 0.047, 1.0)
@@ -331,6 +333,13 @@ func apply_fertilizer(fertilizer_id: String) -> bool:
 	])
 	return true
 
+func _apply_field_ground_texture(mat: StandardMaterial3D) -> void:
+	if mat == null:
+		return
+	mat.albedo_texture = FIELD_TEXTURE
+	mat.texture_repeat = true
+	mat.uv1_scale = FIELD_TEXTURE_UV1_SCALE
+
 func _ensure_mesh() -> MeshInstance3D:
 	var m = get_node_or_null("MeshInstance3D")
 	if m == null:
@@ -347,6 +356,7 @@ func _ensure_mesh() -> MeshInstance3D:
 		var mat := StandardMaterial3D.new()
 		mat.resource_local_to_scene = true   # jede Instanz hat ihr eigenes Material
 		mat.roughness = 0.7
+		_apply_field_ground_texture(mat)
 		m.material_override = mat
 	m.visible = true
 	m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -488,6 +498,7 @@ func _update_visual():
 	if mat == null:
 		mat = StandardMaterial3D.new()
 		mat.resource_local_to_scene = true
+		_apply_field_ground_texture(mat)
 		mesh.material_override = mat
 
 	match state:

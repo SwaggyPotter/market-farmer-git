@@ -4,6 +4,7 @@
 [ext_resource type="PackedScene" uid="uid://bgmw7b1bh2kxg" path="res://benutzeroberfläche.tscn" id="2_fj7yv"]
 [ext_resource type="PackedScene" uid="uid://bb8uta68hnvrg" path="res://assets/Feld.glb" id="2_tlwt5"]
 [ext_resource type="Script" uid="uid://dpy16xpk6pk25" path="res://world.gd" id="3_mom4b"]
+[ext_resource type="Texture2D" uid="uid://b12fh6d6txgb5" path="res://assets/textures/ground/gravel/gravelly_sand_diff_4k.jpg" id="4_rn3ug"]
 
 [sub_resource type="Environment" id="Environment_gv5m4"]
 background_mode = 2
@@ -16,7 +17,10 @@ ambient_light_energy = 0.84
 [sub_resource type="PlaneMesh" id="PlaneMesh_aqk2v"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gv5m4"]
-albedo_color = Color(0.60557646, 0.28567606, 0.070376076, 1)
+albedo_color = Color(1, 1, 1, 1)
+albedo_texture = ExtResource("4_rn3ug")
+texture_repeat = 1
+uv1_scale = Vector3(40, 40, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fj7yv"]
 bg_color = Color(1, 0.55161536, 0.7314051, 1)
